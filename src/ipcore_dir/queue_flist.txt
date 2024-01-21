@@ -1,0 +1,16 @@
+# Output products list for <queue>
+_xmsgs/pn_parser.xmsgs
+queue/doc/fifo_generator_v9_3_readme.txt
+queue/doc/fifo_generator_v9_3_vinfo.html
+queue/doc/pg057-fifo-generator.pdf
+queue/fifo_generator_v9_3_readme.txt
+queue.asy
+queue.gise
+queue.ngc
+queue.sym
+queue.v
+queue.veo
+queue.xco
+queue.xise
+queue_flist.txt
+queue_xmdf.tcl
