@@ -45,7 +45,7 @@ entity hid_parser is
 
 	 -- keyboard output data
 	 KB_DO : out std_logic_vector(5 downto 0);
-	 EXT_KEYS : out std_logic_vector(15 downto 0) := (others => '1');
+	 EXT_KEYS : out std_logic_vector(15 downto 0) := (others => '0');
 	 
 	 -- tsconf ps/2 scancode to RTC reg F0
 	 KEYCODE: out std_logic_vector(7 downto 0)

@@ -60,7 +60,7 @@ entity mcu is
 	 OSD_COMMAND: out std_logic_vector(15 downto 0);
 	 
 	 -- busy
-	 BUSY: buffer std_logic := '1'
+	 BUSY: buffer std_logic := '0'
 	 
 	);
     end mcu;

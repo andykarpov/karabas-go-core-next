@@ -44,7 +44,7 @@
 # THIS COPYRIGHT NOTICE AND DISCLAIMER MUST BE RETAINED AS
 # PART OF THIS FILE AT ALL TIMES.
 
-set device xc6slx16ftg256-2
+set device xc6slx25ftg256-2
 set projName sdpram_16_9
 set design sdpram_16_9
 set projDir [file dirname [info script]]

@@ -1367,7 +1367,7 @@ begin
         kb_scandoubler & 
         kb_hard_reset;
 
-   zxn_buttons <= kb_divmmc & kb_multiface;
+   zxn_buttons <= "00"; -- kb_divmmc & kb_multiface;
       
       zxnext : entity work.zxnext
    generic map
@@ -1744,7 +1744,7 @@ VCLK_buf: ODDR2
 port map(
 	Q => V_CLK, -- pixel clock for video dac
 	C0 => CLK_28,
-	C1 => not CLK_28,
+	C1 => CLK_28_n,
 	D0 => '1',
 	D1 => '0'
 );

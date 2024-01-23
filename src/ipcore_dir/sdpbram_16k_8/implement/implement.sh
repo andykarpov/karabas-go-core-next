@@ -30,7 +30,7 @@ cp ../example_design/sdpbram_16k_8_exdes.ucf results/
 cd results
 
 echo 'Running ngdbuild'
-ngdbuild -p xc6slx16-ftg256-2 sdpbram_16k_8_exdes
+ngdbuild -p xc6slx25-ftg256-2 sdpbram_16k_8_exdes
 
 echo 'Running map'
 map sdpbram_16k_8_exdes -o mapped.ncd -pr i
