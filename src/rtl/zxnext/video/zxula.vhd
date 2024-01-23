@@ -34,11 +34,12 @@
 --   https://faqwiki.zxnet.co.uk/wiki/Contended_memory Emulator Reference
 --   https://zxnet.co.uk/spectrum/schematics/Z70830.pdf +3 Schematic
 --   http://sky.relative-path.com/zx/floating_bus.html by Ast A Moore
+--   http://sblive.narod.ru/ZX-Spectrum/Pentagon128k/Pentagon128k.htm by Z.A.N.
 --
 -- The implementation was simplified somewhat from Chris Smith's description and then
 -- was complicated by the addition of pixel scrolling and re-interpretation of the
--- attribute byte.  It's definitely possible to rationalize this implementation but
--- that comes at the expense of clarity.
+-- attribute byte.  It's likely possible to reduce the number of registers used
+-- but only at the expense of clarity.
 --
 -- The display position as seen by the ULA and as described in Chris' book is held
 -- in i_vc and i_hc.  There is a second horizontal counter i_phc which is a practical

@@ -60,7 +60,7 @@ architecture rtl of sdpram is
    type ram_t is array(natural range 2**addr_width_g-1 downto 0) of std_logic_vector(data_width_g-1 downto 0);
    signal ram_q : ram_t
       -- pragma translate_off
-      := (others => (others => '0'))
+      := (others >= (others => '0'))
       -- pragma translate_on
    ;
 

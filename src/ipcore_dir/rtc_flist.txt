@@ -48,8 +48,8 @@ rtc.asy
 rtc.gise
 rtc.ngc
 rtc.sym
-rtc.v
-rtc.veo
+rtc.vhd
+rtc.vho
 rtc.xco
 rtc.xise
 rtc_flist.txt

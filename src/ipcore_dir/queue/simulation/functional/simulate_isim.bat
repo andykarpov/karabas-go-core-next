@@ -44,9 +44,9 @@
 :: THIS COPYRIGHT NOTICE AND DISCLAIMER MUST BE RETAINED AS
 :: PART OF THIS FILE AT ALL TIMES.
 
-echo "Compiling Core Verilog UNISIM/Behavioral model"
-vlogcomp -work work ..\\..\\..\\queue.v
-vhpcomp -work work ..\\..\\example_design\\queue_exdes.vhd
+echo "Compiling Core VHDL UNISIM/Behavioral model"
+vhpcomp  -work work ..\\..\\..\\queue.vhd
+vhpcomp  -work work ..\\..\\example_design\\queue_exdes.vhd
 
 echo "Compiling Test Bench Files"
 vhpcomp -work work ..\\queue_pkg.vhd
@@ -57,7 +57,6 @@ vhpcomp -work work ..\\queue_pctrl.vhd
 vhpcomp -work work ..\\queue_synth.vhd 
 vhpcomp -work work ..\\queue_tb.vhd
 
-vlogcomp -work work $XILINX\\verilog\\src\\glbl.v
-fuse work.queue_tb work.glbl -L xilinxcorelib_ver -L unisims_ver -o queue_tb.exe
+fuse work.queue_tb -L xilinxcorelib -L unisim -o queue_tb.exe
 
 .\\queue_tb.exe -gui -tclbatch .\\wave_isim.tcl

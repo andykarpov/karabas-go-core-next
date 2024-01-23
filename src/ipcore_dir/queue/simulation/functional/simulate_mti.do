@@ -48,9 +48,9 @@
 vlib work 
 vmap work work 
 
-echo "Compiling Core Verilog UNISIM/Behavioral model"
-vlog -work work ../../../queue.v
-vcom -work work ../../example_design/queue_exdes.vhd
+echo "Compiling Core VHDL UNISIM/Behavioral model"
+vcom  -work work ../../../queue.vhd
+vcom  -work work ../../example_design/queue_exdes.vhd
 
 echo "Compiling Test Bench Files"
 vcom -work work ../queue_pkg.vhd
@@ -61,8 +61,7 @@ vcom -work work ../queue_pctrl.vhd
 vcom -work work ../queue_synth.vhd 
 vcom -work work ../queue_tb.vhd
 
-vlog -work work $env(XILINX)/verilog/src/glbl.v
-vsim  -t ps -voptargs="+acc" -L XilinxCoreLib_ver -L unisims_ver glbl work.queue_tb
+vsim  -t ps -voptargs="+acc" -L XilinxCoreLib -L unisim work.queue_tb
 
 add log -r /*
 do wave_mti.do

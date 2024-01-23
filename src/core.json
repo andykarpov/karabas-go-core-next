@@ -1,7 +1,7 @@
 {
     "id": "zxnext",
-    "name": "ZX Next",
-    "build": "24012114",
+    "name": "ZX Next Debug",
+    "build": "24012220",
     "bitstream": "karabas_go.bin",
     "visible": true,
     "type": "none",

@@ -1,7 +1,7 @@
 ##############################################################
 #
 # Xilinx Core Generator version 14.7
-# Date: Sun Jan 21 17:30:03 2024
+# Date: Thu Dec 27 04:09:34 2018
 #
 ##############################################################
 #
@@ -21,8 +21,8 @@ SET addpads = false
 SET asysymbol = true
 SET busformat = BusFormatAngleBracketNotRipped
 SET createndf = false
-SET designentry = Verilog
-SET device = xc6slx25
+SET designentry = VHDL
+SET device = xc6slx16
 SET devicefamily = spartan6
 SET flowvendor = Other
 SET formalverification = false
@@ -32,8 +32,8 @@ SET package = ftg256
 SET removerpms = false
 SET simulationfiles = Behavioral
 SET speedgrade = -2
-SET verilogsim = true
-SET vhdlsim = false
+SET verilogsim = false
+SET vhdlsim = true
 # END Project Options
 # BEGIN Select
 SELECT Distributed_Memory_Generator xilinx.com:ip:dist_mem_gen:7.2
@@ -70,4 +70,4 @@ CSET sync_reset_qspo=false
 MISC pkg_timestamp=2012-11-21T20:07:40Z
 # END Extra information
 GENERATE
-# CRC:  801d8b7
+# CRC: 25735a37

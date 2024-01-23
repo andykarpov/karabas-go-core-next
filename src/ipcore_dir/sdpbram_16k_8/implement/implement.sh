@@ -30,7 +30,7 @@ cp ../example_design/sdpbram_16k_8_exdes.ucf results/
 cd results
 
 echo 'Running ngdbuild'
-ngdbuild -p xc6slx25-ftg256-2 sdpbram_16k_8_exdes
+ngdbuild -p xc6slx16-ftg256-2 sdpbram_16k_8_exdes
 
 echo 'Running map'
 map sdpbram_16k_8_exdes -o mapped.ncd -pr i
@@ -44,5 +44,5 @@ trce -e 10 routed.ncd mapped.pcf -o routed
 echo 'Running design through bitgen'
 bitgen -w routed
 
-echo 'Running netgen to create gate level Verilog model'
-netgen -ofmt verilog -sim -tm sdpbram_16k_8_exdes -pcf mapped.pcf -w -sdf_anno false routed.ncd routed.v
+echo 'Running netgen to create gate level VHDL model'
+netgen -ofmt vhdl -sim -tm sdpbram_16k_8_exdes -pcf mapped.pcf -w routed.ncd routed.vhd

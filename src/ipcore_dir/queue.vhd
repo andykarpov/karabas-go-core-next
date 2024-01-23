@@ -22,7 +22,7 @@
 --    devices, or systems.  Use in such applications are expressly            --
 --    prohibited.                                                             --
 --                                                                            --
---    (c) Copyright 1995-2023 Xilinx, Inc.                                    --
+--    (c) Copyright 1995-2024 Xilinx, Inc.                                    --
 --    All rights reserved.                                                    --
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -48,7 +48,8 @@ ENTITY queue IS
     rd_en : IN STD_LOGIC;
     dout : OUT STD_LOGIC_VECTOR(23 DOWNTO 0);
     full : OUT STD_LOGIC;
-    empty : OUT STD_LOGIC
+    empty : OUT STD_LOGIC;
+    data_count : OUT STD_LOGIC_VECTOR(8 DOWNTO 0)
   );
 END queue;
 
@@ -62,7 +63,8 @@ COMPONENT wrapped_queue
     rd_en : IN STD_LOGIC;
     dout : OUT STD_LOGIC_VECTOR(23 DOWNTO 0);
     full : OUT STD_LOGIC;
-    empty : OUT STD_LOGIC
+    empty : OUT STD_LOGIC;
+    data_count : OUT STD_LOGIC_VECTOR(8 DOWNTO 0)
   );
 END COMPONENT;
 
@@ -134,7 +136,7 @@ END COMPONENT;
       c_has_axis_tstrb => 0,
       c_has_axis_tuser => 0,
       c_has_backup => 0,
-      c_has_data_count => 0,
+      c_has_data_count => 1,
       c_has_data_counts_axis => 0,
       c_has_data_counts_rach => 0,
       c_has_data_counts_rdch => 0,
@@ -270,7 +272,8 @@ U0 : wrapped_queue
     rd_en => rd_en,
     dout => dout,
     full => full,
-    empty => empty
+    empty => empty,
+    data_count => data_count
   );
 -- synthesis translate_on
 

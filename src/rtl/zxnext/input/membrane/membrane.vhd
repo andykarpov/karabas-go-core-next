@@ -39,7 +39,6 @@ entity membrane is
       o_cols            : out std_logic_vector(4 downto 0);   -- key cols returned for read
       
       o_membrane_rows   : out std_logic_vector(7 downto 0);   -- physical membrane rows  0 = active, 1 = Z
-      o_membrane_ridx   : out std_logic_vector(2 downto 0);   -- physical membrane row by number 0-7
       i_membrane_cols   : in  std_logic_vector(6 downto 0);   -- physical membrane cols returned, 6:5 are extra columns
       
       i_cancel_extended_entries  : in std_logic;              -- cancel making entries in the standard 8x5 matrix for the extra keys
@@ -131,8 +130,6 @@ begin
          index <= 7;
       end if;
    end process;
-   
-   o_membrane_ridx <= std_logic_vector(to_unsigned(index,3));
    
    -- 8 x 5
    

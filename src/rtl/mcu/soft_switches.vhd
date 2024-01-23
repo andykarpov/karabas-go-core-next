@@ -13,14 +13,14 @@ entity soft_switches is
 	CLK : in std_logic;	
 	SOFTSW_COMMAND : in std_logic_vector(15 downto 0);
 	
-    HARD_RESET : out std_logic; -- F1
-    SCANDOUBLER : out std_logic; -- F2
-    VGA_60HZ : out std_logic; -- F3
-    SOFT_RESET : out std_logic; -- F4
-    SCANLINE : out std_logic; -- F7
-    CPU_SPEED : out std_logic; -- F8
-    MULTIFACE : out std_logic; -- F9
-    DIVMMC : out std_logic -- F10
+    HARD_RESET 	: out std_logic := '0'; -- F1
+    SCANDOUBLER 	: out std_logic := '0'; -- F2
+    VGA_60HZ 		: out std_logic := '0'; -- F3
+    SOFT_RESET 	: out std_logic := '0'; -- F4
+    SCANLINE 		: out std_logic := '0'; -- F7
+    CPU_SPEED 		: out std_logic := '0'; -- F8
+    MULTIFACE 		: out std_logic := '0'; -- F9
+    DIVMMC 			: out std_logic := '0'  -- F10
 
 	);
 end soft_switches;
@@ -35,14 +35,14 @@ begin
 		if (prev_command /= SOFTSW_COMMAND) then
 			prev_command <= SOFTSW_COMMAND;
 			case SOFTSW_COMMAND(15 downto 8) is
-				when x"00" => HARD_RESET <= SOFTSW_COMMAND(0);
-				when x"01" => SCANDOUBLER <= SOFTSW_COMMAND(0);
-				when x"02" => VGA_60HZ <= SOFTSW_COMMAND(0);
-				when x"03" => SOFT_RESET <= SOFTSW_COMMAND(0);
-				when x"04" => SCANLINE <= SOFTSW_COMMAND(0);
-				when x"05" => CPU_SPEED <= SOFTSW_COMMAND(0);
-				when x"06" => MULTIFACE <= SOFTSW_COMMAND(0);
-				when x"07" => DIVMMC <= SOFTSW_COMMAND(0);
+				when x"00" => HARD_RESET 	<= SOFTSW_COMMAND(0);
+				when x"01" => SCANDOUBLER 	<= SOFTSW_COMMAND(0);
+				when x"02" => VGA_60HZ 		<= SOFTSW_COMMAND(0);
+				when x"03" => SOFT_RESET 	<= SOFTSW_COMMAND(0);
+				when x"04" => SCANLINE 		<= SOFTSW_COMMAND(0);
+				when x"05" => CPU_SPEED 	<= SOFTSW_COMMAND(0);
+				when x"06" => MULTIFACE		<= SOFTSW_COMMAND(0);
+				when x"07" => DIVMMC 		<= SOFTSW_COMMAND(0);
 				when others => null;
 			end case;
 		end if;

@@ -22,7 +22,7 @@
 --    devices, or systems.  Use in such applications are expressly            --
 --    prohibited.                                                             --
 --                                                                            --
---    (c) Copyright 1995-2023 Xilinx, Inc.                                    --
+--    (c) Copyright 1995-2024 Xilinx, Inc.                                    --
 --    All rights reserved.                                                    --
 --------------------------------------------------------------------------------
 
@@ -63,7 +63,8 @@ COMPONENT queue
     rd_en : IN STD_LOGIC;
     dout : OUT STD_LOGIC_VECTOR(23 DOWNTO 0);
     full : OUT STD_LOGIC;
-    empty : OUT STD_LOGIC
+    empty : OUT STD_LOGIC;
+    data_count : OUT STD_LOGIC_VECTOR(8 DOWNTO 0)
   );
 END COMPONENT;
 -- COMP_TAG_END ------ End COMPONENT Declaration ------------
@@ -80,7 +81,8 @@ your_instance_name : queue
     rd_en => rd_en,
     dout => dout,
     full => full,
-    empty => empty
+    empty => empty,
+    data_count => data_count
   );
 -- INST_TAG_END ------ End INSTANTIATION Template ------------
 

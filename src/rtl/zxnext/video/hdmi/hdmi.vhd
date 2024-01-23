@@ -34,13 +34,12 @@ entity hdmi is
       I_BLANK        : in std_logic;
       I_HSYNC        : in std_logic;
       I_VSYNC        : in std_logic;
-      I_576P_N       : in std_logic;
       -- PCM audio
-      I_AUDIO_ENABLE : in std_logic;
+      I_AUDIO_ENABLE  : in std_logic;
       I_AUDIO_PCM_L  : in std_logic_vector(15 downto 0);
       I_AUDIO_PCM_R  : in std_logic_vector(15 downto 0);
       -- TMDS parallel pixel synchronous outputs (serialize LSB first)
-      O_RED          : out std_logic_vector(9 downto 0); -- Red
+      O_RED       : out std_logic_vector(9 downto 0); -- Red
       O_GREEN        : out std_logic_vector(9 downto 0); -- Green
       O_BLUE         : out std_logic_vector(9 downto 0)  -- Blue
 );
@@ -61,7 +60,6 @@ port (
    i_hSync     : in std_logic;
    i_vSync     : in std_logic;
    i_blank     : in std_logic;
-   i_576p_n    : in std_logic;
    i_audio_enable  : in std_logic;
    i_audioL    : in std_logic_vector(15 downto 0);
    i_audioR    : in std_logic_vector(15 downto 0);
@@ -118,7 +116,7 @@ end component;
    
    signal ctl_10: std_logic_vector(1 downto 0);
    signal ctl_32: std_logic_vector(1 downto 0);
-
+   
    -- states
    type count_state is (
          videoData, 
@@ -134,13 +132,61 @@ end component;
    signal state: count_state; 
 
    signal clockCounter: integer range 0 to 2047;
+   
+   -- Horizontal Timing constants  
+   constant h_pixels_across   : integer := 720 - 1;
+   constant h_sync_on      : integer := 736 - 1;
+   constant h_sync_off     : integer := 798 - 1;
+   constant h_end_count    : integer := 858 - 1;
+   -- Vertical Timing constants
+   constant v_pixels_down  : integer := 480 - 1;
+   constant v_sync_on      : integer := 489 - 1;
+   constant v_sync_off     : integer := 495 - 1;
+   constant v_end_count    : integer := 525 - 2;
+   
+   --signal I_BLANK        :  std_logic;
+   --signal I_HSYNC        :  std_logic;
+   --signal I_VSYNC        :  std_logic;
 
+
+   signal shift      : std_logic_vector(7 downto 0);
+   signal hcnt    : std_logic_vector(11 downto 0) := "000000000000";    -- horizontal pixel counter
+   signal vcnt    : std_logic_vector(11 downto 0) := "000000000000";    -- vertical line counter
+   
 begin
+
+   process (I_CLK_PIXEL, hcnt)
+   begin
+      if rising_edge(I_CLK_PIXEL) then
+         if hcnt = h_end_count then
+            hcnt <= (others => '0');
+         else
+            hcnt <= hcnt + 1;
+         end if;
+         if hcnt = h_sync_on then
+            if vcnt = v_end_count then
+               vcnt <= (others => '0');
+               shift <= shift + 1;
+            else
+               vcnt <= vcnt + 1;
+            end if;
+         end if;
+      end if;
+   end process;
+   
+   --I_HSYNC   <= '1' when (hcnt <= h_sync_on) or (hcnt > h_sync_off) else '0';
+   --I_VSYNC   <= '1' when (vcnt <= v_sync_on) or (vcnt > v_sync_off) else '0'; 
+   --I_BLANK   <= '1' when (hcnt > h_pixels_across) or (vcnt > v_pixels_down) else '0'; -- 1 when blanking
+   
+-- I_R   <= "11111111" when hcnt = 0 or hcnt = h_pixels_across or vcnt = 0 or vcnt = v_pixels_down else (hcnt(7 downto 0) + shift) and "11111111";
+-- I_G   <= "11111111" when hcnt = 0 or hcnt = h_pixels_across or vcnt = 0 or vcnt = v_pixels_down else (vcnt(7 downto 0) + shift) and "11111111";
+-- I_B   <= "11111111" when hcnt = 0 or hcnt = h_pixels_across or vcnt = 0 or vcnt = v_pixels_down else (hcnt(7 downto 0) + vcnt(7 downto 0) - shift) and "11111111";
+
+   
 
 -- data should be delayed for 11 clocks to allow preamble and guard band generation
 
 -- delay line inputs
-
 delayLineIn(39 downto 32) <= I_R;
 delayLineIn(31 downto 24) <= I_G;
 delayLineIn(23 downto 16) <= I_B;
@@ -172,7 +218,7 @@ ctl_32 <= ctl3&ctl2;
 FSA: process(I_CLK_PIXEL) is 
 begin 
    if(rising_edge(I_CLK_PIXEL)) then
-      if(prevBlank = '0' and I_BLANK = '1') then
+      if(prevBlank = '0' and i_BLANK = '1') then
          state <= controlData;
          clockCounter <= 0;
       else
@@ -304,7 +350,6 @@ port map(
    i_blank     => I_BLANK,
    i_hSync     => I_HSYNC,
    i_vSync     => I_VSYNC,
-   i_576p_n    => I_576P_N,
    i_audio_enable  => I_AUDIO_ENABLE,
    i_audioL    => I_AUDIO_PCM_L,
    i_audioR    => I_AUDIO_PCM_R,

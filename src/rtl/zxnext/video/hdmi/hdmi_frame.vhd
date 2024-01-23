@@ -1,5 +1,6 @@
+
 -- HDMI Frame
--- Copyright 2023 Alvin Albrecht
+-- Copyright 2020 Victor Trucco
 --
 -- This file is part of the ZX Spectrum Next Project
 -- <https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/tree/master/cores>
@@ -27,304 +28,317 @@ use IEEE.std_logic_unsigned.ALL;
 entity hdmi_frame is
    port
    (
-      i_reset_async_n  : std_logic;
+      clock_i     : in std_logic;
+      clock2X_i   : in std_logic;
+      reset_i     : in std_logic;
+      scanlines_i : in std_logic_vector(1 downto 0);  
       
-      -- CLK_28 domain
+      rgb_i       : in std_logic_vector(8 downto 0);
+      hsync_i     : in std_logic;
+      vsync_i     : in std_logic;
+      hblank_n_i  : in std_logic;
+      vblank_n_i  : in std_logic;
+      timing_i    : in std_logic_vector(2 downto 0);
+      
+      rgb_o       : out std_logic_vector(8 downto 0);
+      hsync_o     : out std_logic;
+      vsync_o     : out std_logic;
+      
+      blank_o  : out std_logic;
 
-      i_scanlines      : in std_logic_vector(1 downto 0);   -- CLK_28
-      
-      -- pixel in
-
-      i_CLK_RGB        : in std_logic;                      -- CLK_14
-      i_CLK_RGB_EN     : in std_logic;                      -- CLK_14
-      
-      i_rgb_sync       : in std_logic;                      -- CLK_7
-      i_rgb            : in std_logic_vector(8 downto 0);   -- CLK_14
-
-      -- pixel out
-
-      i_CLK_HDMI       : in std_logic;                      -- ~ 27 MHZ
-
-      o_blank          : out std_logic;
-      o_vsync_n        : out std_logic;
-      o_hsync_n        : out std_logic;
-      
-      o_rgb            : out std_logic_vector(8 downto 0);
-      
-      -- hdmi configuration
-      
-      i_HACTIVE        : in std_logic_vector(9 downto 0);   -- >=
-      i_HSYNC_BEG      : in std_logic_vector(9 downto 0);   -- >= at least two cycles width
-      i_HSYNC_END      : in std_logic_vector(9 downto 0);   -- <= at least two cycles width
-      i_HLAST          : in std_logic_vector(9 downto 0);   -- ==
-      
-      i_VACTIVE        : in std_logic_vector(9 downto 0);   -- >=
-      i_VSYNC_BEG      : in std_logic_vector(9 downto 0);   -- >=
-      i_VSYNC_END      : in std_logic_vector(9 downto 0);   -- <=
-      i_VLAST          : in std_logic_vector(9 downto 0)    -- ==
+      -- config values
+      h_visible         : in integer := 720 - 1;
+      hsync_start       : in integer := 732 - 1;
+      hsync_end         : in integer := 796 - 1;
+      hcnt_end          : in integer := 864 - 1;
+      --
+      v_visible         : in integer := 576 - 1;
+      vsync_start       : in integer := 581 - 1;
+      vsync_end         : in integer := 586 - 1;
+      vcnt_end          : in integer := 625 - 2
    );
 end entity;
+
+architecture rtl of hdmi_frame is   
    
-architecture rtl of hdmi_frame is
+   signal input_addr_s  : std_logic_vector(10 downto 0) := (others=>'0');
+   signal output_addr_s: std_logic_vector(10 downto 0) := (others=>'0');
    
-   signal scanlines      : std_logic_vector(1 downto 0) := (others => '0');
-
-   signal rgb_sync       : std_logic := '0';
-
-   type   state_t        is (S_ASYNC_RESET, S_RGB_SYNC, S_FRAME_WAIT, S_RUNNING);
-   signal state          : state_t;
-   signal state_next     : state_t;
+   signal rgb_s      : std_logic_vector(8 downto 0);
+   signal rgb_r_25      : std_logic_vector(3 downto 0);
+   signal rgb_g_25      : std_logic_vector(3 downto 0);
+   signal rgb_b_25      : std_logic_vector(3 downto 0);
+   signal rgb_r_12      : std_logic_vector(3 downto 0);
+   signal rgb_g_12      : std_logic_vector(3 downto 0);
+   signal rgb_b_12      : std_logic_vector(3 downto 0);
+   signal pixel_out     : std_logic_vector(8 downto 0);
+   signal max_scanline     : std_logic_vector(9 downto 0):= (others=>'0');
    
-   signal running        : std_logic;
+   signal hsync_s    : std_logic := '1';
+   signal vsync_s    : std_logic := '1';
+   signal odd_line_s : std_logic := '0';
+
+   signal locked_s   : std_logic := '0';
+   signal locked_x   : std_logic := '0';
+   signal locked_y   : std_logic := '0';
    
-   signal h_last         : std_logic;
-   signal v_last         : std_logic;
+   signal vs_counter_s  : std_logic_vector(15 downto 0):= (others=>'0');
    
-   signal hcnt           : std_logic_vector(9 downto 0) := (others => '0');
-   signal vcnt           : std_logic_vector(9 downto 0) := (others => '0');
    
-   signal hsync_n        : std_logic := '1';
-   signal vsync_n        : std_logic := '1';
-   signal blank          : std_logic := '1';
 
-   signal v_active       : std_logic;
-   signal h_active       : std_logic;
-   signal hdmi_active    : std_logic;
+   --ModeLine "720x480@60"       27.00    720   736   798   858      480   489   495   525 
+   -- Horizontal Timing constants  
+-- constant h_visible   : integer := 720 - 1;
+-- constant hsync_start       : integer := 736 - 1;
+-- constant hsync_end         : integer := 798 - 1;
+-- constant hcnt_end       : integer := 858 - 1;
+-- -- Vertical Timing constants
+-- constant v_visible      : integer := 480 - 1;
+-- constant vsync_start       : integer := 489 - 1;
+-- constant vsync_end         : integer := 495 - 1;
+-- constant vcnt_end       : integer := 525 - 2;
 
-   signal waddr          : std_logic_vector(12 downto 0) := (others => '0');
-   signal raddr          : std_logic_vector(12 downto 0) := (others => '0');
-   signal raddr_lag      : std_logic_vector(12 downto 0) := (others => '0');
+   
+   
+-- ----Modeline "720x576x50hz"   27    720   732   796   864      576   581   586   625 
+-- -- Horizontal Timing constants  
+-- constant h_visible   : integer := 720 - 1;
+-- constant hsync_start       : integer := 732 - 1;
+-- constant hsync_end         : integer := 796 - 1;
+-- constant hcnt_end       : integer := 864 - 1;
+-- -- Vertical Timing constants
+-- constant v_visible      : integer := 576 - 1;
+-- constant vsync_start       : integer := 581 - 1;
+-- constant vsync_end         : integer := 586 - 1;
+-- constant vcnt_end       : integer := 625 - 2;
 
-   signal rgb_raw        : std_logic_vector(8 downto 0);
+   
+   --
+   signal hcnt          : std_logic_vector(9 downto 0) := (others => '0');
+   signal h             : std_logic_vector(9 downto 0) := (others => '0');
+-- signal vcnt          : std_logic_vector(9 downto 0) := (others => '0');
+-- signal vcnt          : std_logic_vector(9 downto 0) := "0000110010"; --50 (initial vertical adjust) 60hz
+-- signal vcnt          : std_logic_vector(9 downto 0) := "0001011010"; --90 (initial vertical adjust)
+-- signal vcnt          : std_logic_vector(9 downto 0) := "0001100100"; --100 (initial vertical adjust)
+-- signal vcnt          : std_logic_vector(9 downto 0) := "0010010110"; --150 (initial vertical adjust)
 
-   signal rgb_r_25       : std_logic_vector(3 downto 0);
-   signal rgb_g_25       : std_logic_vector(3 downto 0);
-   signal rgb_b_25       : std_logic_vector(3 downto 0);
-   signal rgb_r_12       : std_logic_vector(3 downto 0);
-   signal rgb_g_12       : std_logic_vector(3 downto 0);
-   signal rgb_b_12       : std_logic_vector(3 downto 0);
+   signal vcnt          : std_logic_vector(9 downto 0) := (others => '0');--std_logic_vector(to_unsigned(ver_adj,10));
 
-   signal rgb_scanline   : std_logic_vector(8 downto 0) := (others => '0');
+
+   signal blank         : std_logic;
+   signal picture       : std_logic;
+   
+   signal line_bank     : std_logic := '0';
+   
+
+
+   signal timing_selected_s : std_logic_vector (2 downto 0) := "000";
+   
+
+   signal egde_vb : std_logic_vector(1 downto 0) := "11";
+   signal egde_hb : std_logic_vector(1 downto 0) := "11";
+
 
 begin
 
-   -- cross clock domains
-   
-   process (i_CLK_HDMI)
-   begin
-      if rising_edge(i_CLK_HDMI) then
-         scanlines <= i_scanlines;
-      end if;
-   end process;
+   --ModeLine "720x480@60"       27.00    720   736   798   858      480   489   495   525 
+   -- Horizontal Timing constants  
+-- constant h_visible   : integer := 720 - 1;
+-- constant hsync_start       : integer := 736 - 1;
+-- constant hsync_end         : integer := 798 - 1;
+-- constant hcnt_end       : integer := 858 - 1;
+-- -- Vertical Timing constants
+-- constant v_visible      : integer := 480 - 1;
+-- constant vsync_start       : integer := 489 - 1;
+-- constant vsync_end         : integer := 495 - 1;
+-- constant vcnt_end       : integer := 525 - 2;
 
-   process (i_CLK_HDMI, i_reset_async_n)
-   begin
-      if i_reset_async_n = '0' then
-         rgb_sync <= '0';
-      elsif rising_edge(i_CLK_HDMI) then
-         if state = S_RGB_SYNC then
-            rgb_sync <= i_rgb_sync;
-         else
-            rgb_sync <= '0';
-         end if;
-      end if;
-   end process;
+   
+   
+   ----Modeline "720x576x50hz"   27    720   732   796   864      576   581   586   625 
+   -- Horizontal Timing constants  
+-- constant h_visible   : integer := 720 - 1;
+-- constant hsync_start       : integer := 732 - 1;
+-- constant hsync_end         : integer := 796 - 1;
+-- constant hcnt_end       : integer := 864 - 1;
+-- -- Vertical Timing constants
+-- constant v_visible      : integer := 576 - 1;
+-- constant vsync_start       : integer := 581 - 1;
+-- constant vsync_end         : integer := 586 - 1;
+-- constant vcnt_end       : integer := 625 - 2;
 
-   -- reset & frame sync
-   
-   process (i_CLK_HDMI, i_reset_async_n)
+   locked_s <= locked_x and locked_y;
+      
+   process (clock2X_i)
    begin
-      if i_reset_async_n = '0' then
-         state <= S_ASYNC_RESET;
-      elsif rising_edge(i_CLK_HDMI) then
-         state <= state_next;
-      end if;
-   end process;
    
-   process (state, rgb_sync, h_last, v_last)
-   begin
-      case state is
-         when S_ASYNC_RESET =>
-            state_next <= S_RGB_SYNC;
-         when S_RGB_SYNC =>
-            if rgb_sync = '1' then
-               state_next <= S_FRAME_WAIT;
-            else
-               state_next <= S_RGB_SYNC;
-            end if;
-         when S_FRAME_WAIT =>
-            if h_last = '1' and v_last = '1' then
-               state_next <= S_RUNNING;
-            else
-               state_next <= S_FRAME_WAIT;
-            end if;
-         when S_RUNNING =>
-            state_next <= S_RUNNING;
-         when others =>
-            state_next <= S_RGB_SYNC;
-      end case;
-   end process;
-   
-   running <= '1' when state = S_RUNNING else '0';
+      if rising_edge(clock2X_i) then
 
-   -- hdmi frame
-   
-   h_last <= '1' when hcnt = i_HLAST else '0';
-   v_last <= '1' when vcnt = i_VLAST else '0';
-   
-   process (i_CLK_HDMI)
-   begin
-      if rising_edge(i_CLK_HDMI) then
-         if rgb_sync = '1' then
-            hcnt <= i_HACTIVE;
-            vcnt <= i_VACTIVE;
-         elsif h_last = '1' then
+         if reset_i = '1' then
+         
+            locked_x <= '0';
+            locked_y <= '0';
+            
             hcnt <= (others => '0');
-            if v_last = '1' then
-               vcnt <= (others => '0');
+            vcnt <= (others => '0');
+            
+            odd_line_s <= '0';
+            
+            egde_hb <= "11";
+            egde_vb <= "11";
+            
+         elsif (timing_i /= "111") or (timing_i /= timing_selected_s) then
+         
+            timing_selected_s <= timing_i;
+            
+            locked_x <= '0';
+            locked_y <= '0';
+            
+            hcnt <= (others => '0');
+            vcnt <= (others => '0');
+            
+            odd_line_s <= '0';
+
+            egde_hb <= "11";
+            egde_vb <= "11";
+         
+         else
+         
+            egde_hb <= egde_hb(0) & hblank_n_i;    
+            
+            if locked_x = '0' and egde_hb = "01" then
+            
+               locked_x <= '1';
+               hcnt <= (others => '0');
+
+            elsif hcnt = hcnt_end then
+            
+               hcnt <= (others => '0');
+            
             else
-               vcnt <= vcnt + 1;
+            
+               hcnt <= hcnt + 1;
+
             end if;
-         else
-            hcnt <= hcnt + 1;
-         end if;
-      end if;
-   end process;
-   
-   process (i_CLK_HDMI)
-   begin
-      if rising_edge(i_CLK_HDMI) then
-         if (hcnt >= i_HSYNC_BEG) and (hcnt <= i_HSYNC_END) then
-            hsync_n <= not running;
-         else
-            hsync_n <= '1';
-         end if;
-      end if;
-   end process;
-   
-   o_hsync_n <= hsync_n;
-   
-   process (i_CLK_HDMI)
-   begin
-      if rising_edge(i_CLK_HDMI) then
-         if (vcnt >= i_VSYNC_BEG) and (vcnt <= i_VSYNC_END) then
-            vsync_n <= not running;
-         else
-            vsync_n <= '1';
-         end if;
-      end if;
-   end process;
-   
-   o_vsync_n <= vsync_n;
+            
+            if locked_x = '1' and (hcnt = hsync_start) then
+            
+               egde_vb <= egde_vb(0) & vblank_n_i;
+               
+               if egde_vb = "01" then
+               
+                  locked_y <= '1';
+                  
+                  vcnt <= (others => '0');
+                  odd_line_s <= '0';
+               
+               else
+               
+                  vcnt <= vcnt + 1;
+                  odd_line_s <= not odd_line_s;
+               
+               end if;
+            
+            end if;
 
-   v_active <= '1' when vcnt >= i_VACTIVE else '0';
-   h_active <= '1' when hcnt >= i_HACTIVE else '0';
+         end if;
+      
+      end if;
    
-   hdmi_active <= h_active and v_active;
+   end process;
 
-   process (i_CLK_HDMI)
-   begin
-      if rising_edge(i_CLK_HDMI) then
-         if hdmi_active = '1' then
-            blank <= not running;
-         else
-            blank <= '1';
-         end if;
-      end if;
-   end process;
-   
-   o_blank <= blank;
-
-   -- pixel buffer
-   
-   process (i_CLK_RGB)
-   begin
-      if rising_edge(i_CLK_RGB) then
-         if running = '0' then
-            waddr <= (others => '0');
-         elsif i_CLK_RGB_EN = '1' then
-            waddr <= waddr + 1;
-         end if;
-      end if;
-   end process;
-   
-   process (i_CLK_HDMI)
-   begin
-      if rising_edge(i_CLK_HDMI) then
-         if running = '0' then
-            raddr <= (others => '0');
-         elsif hdmi_active = '1' then
-            raddr <= raddr + 1;
-         elsif (v_active = '1') and (hsync_n = '0') and (vcnt(0) /= i_VACTIVE(0)) then
-            raddr <= raddr_lag;
-         end if;
-      end if;
-   end process;
-   
-   process (i_CLK_HDMI)
-   begin
-      if rising_edge(i_CLK_HDMI) then
-         if (hsync_n = '0') and (vcnt(0) = i_VACTIVE(0)) then
-            raddr_lag <= raddr;
-         end if;
-      end if;
-   end process;
-   
-   hdmi_buffer : entity work.dpram2
-   generic map
-   (
-      addr_width_g   => 13,
+   scandoubler_ram : entity work.dpram2
+   generic map (
+      addr_width_g   => 11,
       data_width_g   => 9
    )
-   port map
-   (
-      -- sync write only port
-      clk_a_i        => i_CLK_RGB,
-      we_i           => i_CLK_RGB_EN,
-      addr_a_i       => waddr,
-      data_a_i       => i_rgb,
-      -- sync read only port
-      clk_b_i        => i_CLK_HDMI,
-      addr_b_i       => raddr,
-      data_b_o       => rgb_raw
+   port map (
+      clk_a_i     => clock_i,
+      we_i        => '1',
+      addr_a_i    => input_addr_s,
+      data_a_i    => rgb_i,
+      data_a_o    => open,
+      --
+      clk_b_i     => clock2X_i,
+      addr_b_i    => output_addr_s,
+      data_b_o    => rgb_s
    );
-
-   rgb_r_25 <= ('0' & rgb_raw(8 downto 6)) + ("00" & rgb_raw(8 downto 7));
-   rgb_g_25 <= ('0' & rgb_raw(5 downto 3)) + ("00" & rgb_raw(5 downto 4));
-   rgb_b_25 <= ('0' & rgb_raw(2 downto 0)) + ("00" & rgb_raw(2 downto 1));
-   
-   rgb_r_12 <= (rgb_r_25) + ("000" & rgb_raw(8));
-   rgb_g_12 <= (rgb_g_25) + ("000" & rgb_raw(5));
-   rgb_b_12 <= (rgb_b_25) + ("000" & rgb_raw(2));
-
-   process (running, vcnt, i_VACTIVE, scanlines, rgb_raw, rgb_r_25, rgb_g_25, rgb_b_25, rgb_r_12, rgb_g_12, rgb_b_12)
+      
+   process (clock_i)
+   variable egde_hb_2 : std_logic_vector(1 downto 0);
    begin
-      if running = '0' then
-         rgb_scanline <= (others => '0');
-      elsif vcnt(0) = i_VACTIVE(0) then
-         rgb_scanline <= rgb_raw;
-      else
-         case scanlines is
-            when "00" =>
-               rgb_scanline <= rgb_raw;
-            when "01" =>
-               rgb_scanline <= '0' & rgb_raw(8 downto 7) & '0' & rgb_raw(5 downto 4) & '0' & rgb_raw(2 downto 1);   -- 50%
-            when "10" =>
-               rgb_scanline <= rgb_r_25(3 downto 1) & rgb_g_25(3 downto 1) & rgb_b_25(3 downto 1);   -- 25%
-            when others =>
-               rgb_scanline <= rgb_r_12(3 downto 1) & rgb_g_12(3 downto 1) & rgb_b_12(3 downto 1);   -- 12.5%
-         end case;
+   
+      if rising_edge(clock_i) then
+         
+         egde_hb_2 := egde_hb_2(0) & hblank_n_i;   
+         
+         if egde_hb_2 = "01" then -- rising edge of hblank
+            input_addr_s <= (not line_bank) & "0000000000";
+            line_bank <= not line_bank;
+         else
+            input_addr_s <= input_addr_s + 1;
+         end if;
+            
+      end if;
+      
+   end process;
+   
+   process (clock2X_i)
+   begin
+   
+      if rising_edge(clock2X_i) then
+         output_addr_s <= ((not line_bank) & hcnt);-- + hcnt_adj;
+      end if;
+      
+   end process;
+   
+   rgb_r_25 <= std_logic_vector(unsigned('0' & rgb_s(8 downto 6)) + unsigned("00" & rgb_s(8 downto 7)));
+   rgb_g_25 <= std_logic_vector(unsigned('0' & rgb_s(5 downto 3)) + unsigned("00" & rgb_s(5 downto 4)));
+   rgb_b_25 <= std_logic_vector(unsigned('0' & rgb_s(2 downto 0)) + unsigned("00" & rgb_s(2 downto 1)));
+   
+   rgb_r_12 <= std_logic_vector(unsigned(rgb_r_25) + unsigned("000" & rgb_s(8 downto 8)));
+   rgb_g_12 <= std_logic_vector(unsigned(rgb_g_25) + unsigned("000" & rgb_s(5 downto 5)));
+   rgb_b_12 <= std_logic_vector(unsigned(rgb_b_25) + unsigned("000" & rgb_s(2 downto 2)));
+   
+   pixel_out <=   ('0' & rgb_s(8 downto 7) & '0' & rgb_s(5 downto 4) & '0' & rgb_s(2 downto 1)) when odd_line_s = '1' and scanlines_i = "01" else -- 50%
+                  (rgb_r_25(3 downto 1) & rgb_g_25(3 downto 1) & rgb_b_25(3 downto 1)) when odd_line_s = '1' and scanlines_i = "10" else -- 25%
+                  (rgb_r_12(3 downto 1) & rgb_g_12(3 downto 1) & rgb_b_12(3 downto 1)) when odd_line_s = '1' and scanlines_i = "11" else -- 12.5%
+                  rgb_s;
+
+   process (clock2X_i)
+   begin
+      if rising_edge(clock2X_i) then
+         if locked_s = '0' then
+         
+            blank_o <= '1';
+            hsync_o <= '1';
+            vsync_o <= '1';
+            rgb_o <= (others => '0');
+            
+         else
+         
+            if (hcnt > h_visible) or (vcnt > v_visible) then
+               blank_o <= '1';
+               rgb_o <= (others => '0');
+            else
+               blank_o <= '0';
+               rgb_o <= pixel_out;
+            end if;
+            
+            if (hcnt <= hsync_start) or (hcnt > hsync_end) then
+               hsync_o <= '1';
+            else
+               hsync_o <= '0';
+            end if;
+            
+            if (vcnt <= vsync_start) or (vcnt > vsync_end) then
+               vsync_o <= '1';
+            else
+               vsync_o <= '0';
+            end if;
+
+         end if;
       end if;
    end process;
 
---   process (i_CLK_HDMI)
---   begin
---      if rising_edge(i_CLK_HDMI) then
---         o_rgb <= rgb_scanline;
---      end if;
---   end process;
-
-   o_rgb <= rgb_scanline;
-
 end architecture;
-

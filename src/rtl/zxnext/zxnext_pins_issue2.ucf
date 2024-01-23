@@ -134,8 +134,8 @@ NET 'keyb_col_i<2>'     LOC='N8'    | IOSTANDARD = LVTTL | PULLUP;   # 3
 NET 'keyb_col_i<1>'     LOC='P8'    | IOSTANDARD = LVTTL | PULLUP;   # 4
 NET 'keyb_col_i<0>'     LOC='L7'    | IOSTANDARD = LVTTL | PULLUP;   # 5
 
-NET 'bus_rst_n_io'      LOC='M9'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 6 | SLEW = SLOW;
-NET 'bus_clk35_o'       LOC='G11'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 6 | SLEW = SLOW;
+NET 'bus_rst_n_io'      LOC='M9'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 8 | SLEW = SLOW;
+NET 'bus_clk35_o'       LOC='G11'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_addr_o<0>'     LOC='A8'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_addr_o<1>'     LOC='A9'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_addr_o<2>'     LOC='A10'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
@@ -160,23 +160,21 @@ NET 'bus_data_io<4>'    LOC='E6'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4
 NET 'bus_data_io<5>'    LOC='D8'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_data_io<6>'    LOC='C7'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_data_io<7>'    LOC='A6'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
-NET 'bus_int_n_io'      LOC='F10'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 2 | SLEW = SLOW;
-NET 'bus_int_in_i'      LOC='N16'   | IOSTANDARD = LVCMOS33 | PULLUP;
+NET 'bus_int_n_io'      LOC='F10'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_nmi_n_i'       LOC='E11'   | IOSTANDARD = LVCMOS33;
-NET 'bus_ramcs_io'      LOC='C16'   | IOSTANDARD = LVCMOS33 | PULLDOWN | DRIVE = 4 | SLEW = SLOW;
+NET 'bus_ramcs_i'       LOC='C16'   | IOSTANDARD = LVCMOS33;
 NET 'bus_romcs_i'       LOC='C15'   | IOSTANDARD = LVCMOS33;
 NET 'bus_wait_n_i'      LOC='B16'   | IOSTANDARD = LVCMOS33 | PULLUP;
 NET 'bus_halt_n_o'      LOC='B15'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_iorq_n_o'      LOC='D9'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_m1_n_o'        LOC='D11'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_mreq_n_o'      LOC='E10'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
-NET 'bus_rd_n_io'       LOC='C9'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
+NET 'bus_rd_n_o'        LOC='C9'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_wr_n_o'        LOC='C10'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_rfsh_n_o'      LOC='C11'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_busreq_n_i'    LOC='M12'   | IOSTANDARD = LVCMOS33;
 NET 'bus_busack_n_o'    LOC='J13'   | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW;
 NET 'bus_iorqula_n_i'   LOC='F12'   | IOSTANDARD = LVCMOS33;
-NET 'bus_y_o'           LOC='D6'    | IOSTANDARD = LVCMOS33 | PULLUP | DRIVE = 4 | SLEW = SLOW; 
 
 NET 'rgb_r_o<0>'        LOC='H4'    | IOSTANDARD = LVTTL | DRIVE = 8 | SLEW = FAST ; 
 NET 'rgb_r_o<1>'        LOC='H3'    | IOSTANDARD = LVTTL | DRIVE = 8 | SLEW = FAST ; 
@@ -189,6 +187,7 @@ NET 'rgb_b_o<1>'        LOC='C2'    | IOSTANDARD = LVTTL | DRIVE = 8 | SLEW = FA
 NET 'rgb_b_o<2>'        LOC='H1'    | IOSTANDARD = LVTTL | DRIVE = 8 | SLEW = FAST ; 
 NET 'vsync_o'           LOC='A11'   | IOSTANDARD = LVTTL | DRIVE = 8 | SLEW = FAST ; 
 NET 'hsync_o'           LOC='B10'   | IOSTANDARD = LVTTL | DRIVE = 8 | SLEW = FAST ; 
+NET 'csync_o'           LOC='D6'    | IOSTANDARD = LVTTL | PULLUP | DRIVE = 8 | SLEW = FAST ; 
 
 NET 'hdmi_n_o<0>'       LOC='P5'    | IOSTANDARD = TMDS_33;
 NET 'hdmi_p_o<0>'       LOC='N5'    | IOSTANDARD = TMDS_33;
@@ -236,50 +235,28 @@ NET 'accel_io<25>'      LOC='H15'   | IOSTANDARD = LVCMOS33 | DRIVE = 2;
 NET 'accel_io<26>'      LOC='E15'   | IOSTANDARD = LVCMOS33 | DRIVE = 2;
 NET 'accel_io<27>'      LOC='L14'   | IOSTANDARD = LVCMOS33 | DRIVE = 2;
 
-#
-# TIMING CONSTRAINTS
-#
+NET 'extras_io'         LOC='N16'   | IOSTANDARD = LVTTL | PULLUP;
 
-TIMESPEC TSF2P  = FROM : FFS   : TO : PADS  : 10 ns;
+# Timings
 
-NET "CLK_50" TNM_NET = "CLK_50" | KEEP | S | PERIOD = 20 ns;
+TIMESPEC TSF2P  = FROM : FFS   : TO : PADS  : 26 ns;
 
 NET "CLK_28" TNM_NET = "CLK_28" | KEEP | S;
 NET "CLK_28_n" TNM_NET = "CLK_28_n" | KEEP | S;
-NET "CLK_28x5_n" TNM_NET = "CLK_28x5_n" | KEEP | S;
-
+NET "CLK_14" KEEP | S | PERIOD = 60 ns;
+NET "CLK_7" KEEP | S | PERIOD = 120 ns;
+NET "CLK_HDMI" TNM_NET = "CLK_HDMI" | KEEP | S;
+NET "CLK_HDMI_n" TNM_NET = "CLK_HDMI_n" | KEEP | S;
+NET "CLK_3M5_CONT" KEEP | S | PERIOD = 240 ns;
 NET "clk_28_div<7>" KEEP | S | PERIOD = 7680 ns;
 NET "clk_28_div<6>" KEEP | S | PERIOD = 3840 ns;
 
 TIMESPEC "TS_CLK_28" = PERIOD "CLK_28" 30 ns;
 TIMESPEC "TS_CLK_28_n" = PERIOD "CLK_28_n" TS_CLK_28 PHASE + 15 ns;
-TIMESPEC "TS_CLK_28x5_n" = PERIOD "CLK_28x5_n" TS_CLK_28/5 PHASE + 3 ns;
+TIMESPEC "TS_CLK_HDMI" = PERIOD "CLK_HDMI" TS_CLK_28/5;
+TIMESPEC "TS_CLK_HDMI_n" = PERIOD "CLK_HDMI_n" TS_CLK_28/5 PHASE + 3 ns;
 
 NET "clock_50_i" CLOCK_DEDICATED_ROUTE = FALSE;
 
-# Uncomment constraints below depending on g_video_inc setting in zxnext_top_issue2.vhd
-
-# (1) g_video_inc = "X1" ; VGA ONLY OR VGA+HDMI
-
-#NET "CLK_14" KEEP | S | PERIOD = 60 ns;
-#NET "CLK_7" KEEP | S | PERIOD = 120 ns;
-#NET "clk_3m5_cont" KEEP | S | PERIOD = 240 ns;
-
-# (2) g_video_inc = "10" ; HDMI ONLY
-
-NET "CLK_14" TNM_NET = "CLK_14" | KEEP |S;
-NET "CLK_7" TNM_NET = "CLK_7" | KEEP | S;
-
-TIMESPEC "TS_CLK_14" = PERIOD "CLK_14" TS_CLK_28*2;
-TIMESPEC "TS_CLK_7" = PERIOD "CLK_7" TS_CLK_28*4;
-
-# (3) g_video_inc = "1X" ; HDMI ONLY OR VGA+HDMI
-
-NET "CLK_HDMI" TNM_NET = "CLK_HDMI" | S;
-NET "CLK_HDMIx5" TNM_NET = "CLK_HDMIx5" | S;
-NET "CLK_HDMIx5_n" TNM_NET = "CLK_HDMIx5_n" | S;
-
-TIMESPEC "TS_CLK_HDMI" = PERIOD "CLK_HDMI" 35 ns;
-TIMESPEC "TS_CLK_HDMIx5" = PERIOD "CLK_HDMIx5" TS_CLK_HDMI/5;
-TIMESPEC "TS_CLK_HDMIx5_n" = PERIOD "CLK_HDMIx5_n" TS_CLK_HDMI/5 PHASE + 3.5 ns;
-
+#NET "clock_50_i" TNM_NET = "clock_50_i";
+#TIMESPEC "TS_clock_50_i" = PERIOD "clock_50_i" 18 ns;

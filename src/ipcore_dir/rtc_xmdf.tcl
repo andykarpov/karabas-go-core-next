@@ -223,12 +223,12 @@ utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path rtc.sym
 utilities_xmdf::xmdfSetData $instance FileSet $fcount type symbol
 incr fcount
 
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path rtc.v
-utilities_xmdf::xmdfSetData $instance FileSet $fcount type verilog
+utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path rtc.vhd
+utilities_xmdf::xmdfSetData $instance FileSet $fcount type vhdl
 incr fcount
 
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path rtc.veo
-utilities_xmdf::xmdfSetData $instance FileSet $fcount type verilog_template
+utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path rtc.vho
+utilities_xmdf::xmdfSetData $instance FileSet $fcount type vhdl_template
 incr fcount
 
 utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path rtc.xco

@@ -49,7 +49,7 @@ set work work
 mkdir work
 
 
-ncvlog -work work ../../implement/results/routed.v
+ncvhdl -v93  -work work ../../implement/results/routed.vhd
 
 echo "Compiling Test Bench Files"
 
@@ -72,7 +72,7 @@ echo 'MTM_CONTROL = "MAXIMUM";' >> sdf.cmd
 
 
 echo "Elaborating Design"
-ncelab -access +rwc glbl -sdf_cmd_file sdf.cmd $work.sdpbram_16k_8_tb
+ncelab -access +rwc -sdf_cmd_file sdf.cmd $work.sdpbram_16k_8_tb
 
 echo "Simulating Design"
 ncsim -gui -input @"simvision -input wave_ncsim.sv" $work.sdpbram_16k_8_tb

@@ -61,16 +61,12 @@
 --    (Not how the real hw works but it makes audio out of the zx next cleaner)
 -- 5. Add differences in how registers are read back on YM and AY
 -- 6. Fix bug where envelope period counter was not reset on envelope reset
--- 7. Export currently selected register
 
 library ieee;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
 entity YM2149 is
-   generic (
-      constant AY_ID    : std_logic_vector(1 downto 0) := "00"
-   );
    port (
       CLK               : in  std_logic;     -- note 6 Mhz
       ENA               : in  std_logic;     -- clock enable for higher speed operation
@@ -79,7 +75,6 @@ entity YM2149 is
       -- data bus
       I_DA              : in  std_logic_vector(7 downto 0);
       O_DA              : out std_logic_vector(7 downto 0);
-      I_REG             : in  std_logic;
       -- control
       busctrl_addr      : in  std_logic;
       busctrl_we        : in  std_logic;
@@ -111,7 +106,7 @@ architecture RTL of YM2149 is
    signal poly17           : std_logic_vector(16 downto 0) := (others => '0');
    
    -- registers
-   signal addr             : std_logic_vector(4 downto 0);
+   signal addr             : std_logic_vector(7 downto 0);
    
    signal reg              : array_16x8;
    signal env_reset        : std_logic;
@@ -170,7 +165,7 @@ begin
          if (RESET_H = '1') then
             addr <= (others => '0');
          elsif  busctrl_addr = '1' then -- yuk
-            addr <= I_DA(4 downto 0);
+            addr <= I_DA;
          end if;
       end if;
    end process;
@@ -217,9 +212,7 @@ begin
    process(clk)
    begin
       if clk'event and clk = '1' then
-         if I_REG = '1' then
-            O_DA <= AY_ID & '0' & addr;
-         elsif addr(4) = '1' and ctrl_aymode = '0' then
+         if addr(4) = '1' and ctrl_aymode = '0' then
             O_DA <= x"FF";
          else
             case addr(3 downto 0) is

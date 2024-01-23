@@ -65,7 +65,7 @@ cp ../example_design/spram_320_9_exdes.ucf results/
 cd results
 
 echo 'Running ngdbuild'
-ngdbuild -p xc6slx25-ftg256-2 -sd ../../../ spram_320_9_exdes
+ngdbuild -p xc6slx16-ftg256-2 -sd ../../../ spram_320_9_exdes
 
 echo 'Running map'
 map spram_320_9_exdes -o mapped.ncd
@@ -79,6 +79,6 @@ trce -e 10 routed.ncd mapped.pcf -o routed
 echo 'Running design through bitgen'
 bitgen -w routed
 
-echo 'Running netgen to create gate level Verilog model'
-netgen -ofmt verilog -sim -tm spram_320_9_exdes -pcf mapped.pcf -w -sdf_anno false routed.ncd routed.v
+echo 'Running netgen to create gate level VHDL model'
+netgen -ofmt vhdl -sim -tm spram_320_9_exdes -pcf mapped.pcf -w routed.ncd routed.vhd
 

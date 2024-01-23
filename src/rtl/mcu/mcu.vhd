@@ -66,6 +66,19 @@ entity mcu is
     end mcu;
 architecture rtl of mcu is
 
+component queue
+port(
+  clk : in std_logic;
+  din : in std_logic_vector(23 downto 0);
+  wr_en : in std_logic;
+  rd_en : in std_logic;
+  dout : out std_logic_vector(23 downto 0);
+  full : out std_logic;
+  empty : out std_logic;
+  data_count : out std_logic_vector(8 downto 0)
+);
+end component;
+
 	-- spi commands
 	constant CMD_KBD			: std_logic_vector(7 downto 0) := x"01";
 	constant CMD_MOUSE 		: std_logic_vector(7 downto 0) := x"02";
@@ -335,7 +348,7 @@ begin
 	RTC_DO <= rtcr_do;
 	
 	-- fifo for write commands to send them on mcu side 
-	UFIFO: entity work.queue 
+	UFIFO: queue 
 	port map (
 		clk 	=> CLK,
 

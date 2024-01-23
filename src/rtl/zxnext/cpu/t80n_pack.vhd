@@ -62,10 +62,10 @@ library ieee;
 use ieee.std_logic_1164.std_logic_vector;
 
 package Z80N_pack is 
-   type Z80N_seq is ( NONE, MMU, NEXTREGW, MUL_DE, ADD_HL_A, ADD_DE_A, ADD_BC_A, SWAPNIB_A, 
-                       PIXELDN, SET_A_E, PIXELAD, MIRROR_A, PUSH_nn, LDPIRX, ADD_HL_nn, ADD_DE_nn,
-                       ADD_BC_nn, LDIRSCALE, BSLA_DE_B, BSRA_DE_B, BSRL_DE_B, BSRF_DE_B, BRLC_DE_B,
-                       JP_C, NMIACK_LSB, NMIACK_MSB, RETN_LSB, RETN_MSB );
+   type Z80N_seq is ( NONE, MMU, NEXTREGW, MUL_DE, ADD_HL_A, ADD_DE_A, ADD_BC_A, SWAPNIB_A, PIXELDN, SET_A_E, PIXELAD, MIRROR_A, PUSH_nn, LDPIRX, ADD_HL_nn , ADD_DE_nn , ADD_BC_nn,
+   LDIRSCALE,
+   BSLA_DE_B, BSRA_DE_B, BSRL_DE_B, BSRF_DE_B, BRLC_DE_B,
+   JP_C);
    signal Z80N_seq_s    : Z80N_seq;
 end package;
 
@@ -220,7 +220,6 @@ package T80N_Pack is
       Halt        : out std_logic;
       NoRead         : out std_logic;
       Write       : out std_logic;
-      No_PC       : out std_logic;
       XYbit_undoc    : out std_logic;
       
       -- entended functions
@@ -228,9 +227,7 @@ package T80N_Pack is
       ext_Data_i        : in std_logic_vector(7 downto 0);
       
       Z80N_dout_o       : out std_logic := '0';
-      Z80N_data_o       : out std_logic_vector(7 downto 0);
-      Z80N_data_o_strobe_lo : out std_logic;
-      Z80N_data_o_strobe_hi : out std_logic;
+      Z80N_data_o       : out std_logic_vector(15 downto 0);
       Z80N_command_o    : out Z80N_seq
    );
    end component;

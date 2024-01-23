@@ -61,7 +61,7 @@ opt_design
 place_design 
 route_design 
 write_sdf -rename_top_module queue_exdes -file routed.sdf 
-write_verilog -nolib -mode timesim -sdf_anno false -rename_top_module queue_exdes routed.v
+write_vhdl -mode sim routed.vhd
 report_timing -nworst 30 -path_type full -file routed.twr
 report_drc -file report.drc
 write_bitstream -bitgen_options {-g UnconstrainedPins:Allow}

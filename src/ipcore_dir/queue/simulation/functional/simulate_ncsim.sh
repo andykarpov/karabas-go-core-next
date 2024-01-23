@@ -47,9 +47,9 @@
 #--------------------------------------------------------------------------------
 mkdir work
 
-echo "Compiling Core Verilog UNISIM/Behavioral model"
-ncvlog -work work ../../../queue.v
-ncvhdl -v93 -work work ../../example_design/queue_exdes.vhd
+echo "Compiling Core VHDL UNISIM/Behavioral model"
+ncvhdl -v93  -work work ../../../queue.vhd
+ncvhdl -v93  -work work ../../example_design/queue_exdes.vhd
 
 echo "Compiling Test Bench Files"
 ncvhdl -v93 -work work ../queue_pkg.vhd
@@ -61,8 +61,7 @@ ncvhdl -v93 -work work ../queue_synth.vhd
 ncvhdl -v93 -work work ../queue_tb.vhd
 
 echo "Elaborating Design"
-ncvlog -work work $XILINX/verilog/src/glbl.v
-ncelab -access +rwc glbl work.queue_tb
+ncelab -access +rwc work.queue_tb
 
 echo "Simulating Design"
 ncsim -gui -input @"simvision -input wave_ncsim.sv" work.queue_tb

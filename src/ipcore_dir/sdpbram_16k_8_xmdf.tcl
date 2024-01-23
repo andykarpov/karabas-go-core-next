@@ -115,7 +115,7 @@ utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_
 utilities_xmdf::xmdfSetData $instance FileSet $fcount type Ignore
 incr fcount
 
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8/simulation/functional/simulate_isim.sh
+utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8/simulation/functional/simulate_isim.bat
 utilities_xmdf::xmdfSetData $instance FileSet $fcount type Ignore
 incr fcount
 
@@ -171,7 +171,7 @@ utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_
 utilities_xmdf::xmdfSetData $instance FileSet $fcount type Ignore
 incr fcount
 
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8/simulation/timing/simulate_isim.sh
+utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8/simulation/timing/simulate_isim.bat
 utilities_xmdf::xmdfSetData $instance FileSet $fcount type Ignore
 incr fcount
 
@@ -219,16 +219,12 @@ utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_
 utilities_xmdf::xmdfSetData $instance FileSet $fcount type ngc
 incr fcount
 
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8.sym
-utilities_xmdf::xmdfSetData $instance FileSet $fcount type symbol
+utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8.vhd
+utilities_xmdf::xmdfSetData $instance FileSet $fcount type vhdl
 incr fcount
 
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8.v
-utilities_xmdf::xmdfSetData $instance FileSet $fcount type verilog
-incr fcount
-
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8.veo
-utilities_xmdf::xmdfSetData $instance FileSet $fcount type verilog_template
+utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8.vho
+utilities_xmdf::xmdfSetData $instance FileSet $fcount type vhdl_template
 incr fcount
 
 utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path sdpbram_16k_8.xco

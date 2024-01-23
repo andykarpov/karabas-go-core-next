@@ -46,8 +46,8 @@
 # PART OF THIS FILE AT ALL TIMES.
 #--------------------------------------------------------------------------------
 
-echo "Compiling Core Verilog UNISIM/Behavioral model"
-vlogcomp -work work ../../implement/results/routed.v
+echo "Compiling Core VHDL UNISIM/Behavioral model"
+vhpcomp  -work work ../../implement/results/routed.vhd
 
 echo "Compiling Test Bench Files"
 vhpcomp -work work ../queue_pkg.vhd
@@ -58,6 +58,6 @@ vhpcomp -work work ../queue_pctrl.vhd
 vhpcomp -work work ../queue_synth.vhd 
 vhpcomp -work work ../queue_tb.vhd
 
-fuse work.queue_tb work.glbl -L simprims_ver -o queue_tb.exe
+fuse work.queue_tb -L simprim  -o queue_tb.exe
 
 ./queue_tb.exe -sdfmax /queue_tb/queue_synth_inst/queue_inst=../../implement/results/routed.sdf -gui -tclbatch ./wave_isim.tcl

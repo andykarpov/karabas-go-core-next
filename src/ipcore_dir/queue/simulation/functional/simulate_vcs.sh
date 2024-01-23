@@ -47,8 +47,8 @@
 #--------------------------------------------------------------------------------
 rm -rf simv* csrc DVEfiles AN.DB
 
-echo "Compiling Core Verilog UNISIM/Behavioral model"
-vlogan +v2k  ../../../queue.v
+echo "Compiling Core VHDL UNISIM/Behavioral model"
+vhdlan  ../../../queue.vhd
 vhdlan  ../../example_design/queue_exdes.vhd
 
 echo "Compiling Test Bench Files"
@@ -61,8 +61,7 @@ vhdlan   ../queue_synth.vhd
 vhdlan   ../queue_tb.vhd
 
 echo "Elaborating Design"
-vlogan +v2k $XILINX/verilog/src/glbl.v
-vcs -time_res 1ps +vcs+lic+wait -debug queue_tb glbl
+vcs -time_res 1ps +vcs+lic+wait -debug queue_tb
 
 echo "Simulating Design"
 ./simv -ucli -i ucli_commands.key

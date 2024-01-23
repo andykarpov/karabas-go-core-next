@@ -256,19 +256,14 @@ architecture rtl of T80N is
    signal I_BTR         : std_logic;
    signal I_RLD         : std_logic;
    signal I_RRD         : std_logic;
-   signal I_RXDD        : std_logic;
    signal I_INRC        : std_logic;
    signal SetDI         : std_logic;
    signal SetEI         : std_logic;
    signal IMode         : std_logic_vector(1 downto 0);
    signal Halt          : std_logic;
-   signal No_PC         : std_logic;
    signal XYbit_undoc   : std_logic;
    
    ---------------------------------
-   signal Z80N_data_s   :  std_logic_vector(7 downto 0);
-   signal Z80N_data_o_strobe_lo : std_logic;
-   signal Z80N_data_o_strobe_hi : std_logic;
    signal Z80N_command_s   :  Z80N_seq;
    signal debug_s       : std_logic_vector(7 downto 0) := (others=>'0');
 
@@ -371,14 +366,11 @@ begin
          Halt => Halt,
          NoRead => NoRead,
          Write => Write,
-         No_PC => No_PC,
          XYbit_undoc => XYbit_undoc,
          ext_ACC_i => ACC,
          ext_Data_i => DI_Reg,
          Z80N_dout_o => Z80N_dout_o,
-         Z80N_data_o => Z80N_data_s,
-         Z80N_data_o_strobe_lo => Z80N_data_o_strobe_lo,
-         Z80N_data_o_strobe_hi => Z80N_data_o_strobe_hi,
+         Z80N_data_o => Z80N_data_o,
          Z80N_command_o => Z80N_command_s
 );
 
@@ -503,11 +495,6 @@ begin
                   IR <= DInst;
                end if;
 
-               if IntCycle = '1' and IStatus = "10" then
-                  -- IM2 vector address low byte from bus
-                  TmpAddr(7 downto 0) <= DInst;
-               end if;
-
                ISet <= "00";
                if Prefix /= "00" then
                   if Prefix = "11" then
@@ -603,12 +590,7 @@ begin
                         A(7 downto 0) <= TmpAddr(7 downto 0);
                      end if;
                   when others =>
-                     if ISet = "10" and IR(7 downto 4) = x"B" and IR(2 downto 1) = "01" and MCycle = "011" and No_BTR = '0' then
-                        -- INIR, INDR, OTIR, OTDR
-                        A <= RegBusA_r;
-                     elsif No_PC = '0' or No_BTR = '1' or (I_DJNZ = '1' and IncDecZ = '1') or Mode > 1 then
-                        A <= std_logic_vector(PC);
-                     end if;
+                     A <= std_logic_vector(PC);
                   end case;
                end if;
 
@@ -1248,11 +1230,7 @@ begin
          end if;
 
          if TState = 1 and Auto_Wait_t1 = '0' then
-            -- Keep D0 from M3 for RLD/RRD (Sorgelig)
-            I_RXDD <= I_RLD or I_RRD;
-            if I_RXDD='0' then
-               DO <= BusB;
-            end if;
+            DO <= BusB;
             if I_RLD = '1' then
                DO(3 downto 0) <= BusA(3 downto 0);
                DO(7 downto 4) <= BusB(3 downto 0);
@@ -1308,20 +1286,6 @@ begin
 
    end process;
 
----------------------------------------------------------------------------
-   process (CLK_n)
-   begin
-      if CLK_n'event and CLK_n = '1' then
-        if ClkEn = '1' then
-           if Z80N_data_o_strobe_lo = '1' then
-             Z80N_data_o(7 downto 0) <= Z80N_data_s;
-           end if;
-           if Z80N_data_o_strobe_hi = '1' then
-             Z80N_data_o(15 downto 8) <= Z80N_data_s;
-           end if;
-        end if;
-      end if;
-    end process;
 ---------------------------------------------------------------------------
 --
 -- BC('), DE('), HL('), IX and IY
@@ -1684,13 +1648,12 @@ begin
             M1_n <= '1';
          
          elsif CEN = '1' then
-            Auto_Wait_t2 <= Auto_Wait_t1;
             if T_Res = '1' then
                Auto_Wait_t1 <= '0';
-               Auto_Wait_t2 <= '0';
             else
                Auto_Wait_t1 <= Auto_Wait or IORQ_i;
             end if;
+            Auto_Wait_t2 <= Auto_Wait_t1;
             No_BTR <= (I_BT and (not IR(4) or not F(Flag_P))) or
                   (I_BC and (not IR(4) or F(Flag_Z) or not F(Flag_P))) or
                   (I_BTR and (not IR(4) or F(Flag_Z)));
@@ -1780,8 +1743,10 @@ begin
    process (IntCycle, NMICycle, MCycle)
    begin
       Auto_Wait <= '0';
-      if IntCycle = '1' and MCycle = "001" then
-         Auto_Wait <= '1';
+      if IntCycle = '1' or NMICycle = '1' then
+         if MCycle = "001" then
+            Auto_Wait <= '1';
+         end if;
       end if;
    end process;
 

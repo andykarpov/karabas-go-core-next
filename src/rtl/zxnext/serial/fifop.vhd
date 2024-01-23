@@ -29,25 +29,24 @@ entity fifop is
       constant DEPTH_BITS     : positive := 9
    );
    port (
-      i_CLK          : in std_logic;
-      i_reset        : in std_logic;
+      clock_i        : in std_logic;
+      reset_i        : in std_logic;
       
-      o_empty        : out std_logic;   -- held
-      o_full_near    : out std_logic;   -- held (3/4)
-      o_full_almost  : out std_logic;   -- held (full - 2 bytes)
-      o_full         : out std_logic;   -- held
+      empty_o        : out std_logic;
+      full_o         : out std_logic;
       
-      i_rd           : in std_logic;
-      o_raddr        : out std_logic_vector(DEPTH_BITS-1 downto 0);
+      rd_i           : in std_logic;
+      raddr_o        : out std_logic_vector(DEPTH_BITS-1 downto 0);
       
-      i_wr           : in std_logic;
-      o_waddr        : out std_logic_vector(DEPTH_BITS-1 downto 0)
+      wr_i           : in std_logic;
+      waddr_o        : out std_logic_vector(DEPTH_BITS-1 downto 0)
    );
 end entity;
 
 architecture rtl of fifop is
 
    signal stored        : std_logic_vector(DEPTH_BITS downto 0);
+   signal stored_delta  : std_logic_vector(DEPTH_BITS downto 0);
    
    signal empty      : std_logic;
    signal full       : std_logic;
@@ -65,23 +64,23 @@ begin
 
    -- read from fifo
    
-   process (i_CLK)
+   process (clock_i)
    begin
-      if rising_edge(i_CLK) then
-         if i_reset = '1' then
+      if rising_edge(clock_i) then
+         if reset_i = '1' then
             rd_dly <= '0';
          else
-            rd_dly <= i_rd;
+            rd_dly <= rd_i;
          end if;
       end if;
    end process;
 
-   rd_advance <= rd_dly and (not i_rd) and (not empty);
+   rd_advance <= rd_dly and (not rd_i) and (not empty);
 
-   process (i_CLK)
+   process (clock_i)
    begin
-      if rising_edge(i_CLK) then
-         if i_reset = '1' then
+      if rising_edge(clock_i) then
+         if reset_i = '1' then
             rd_addr <= (others => '0');
          elsif rd_advance = '1' then
             rd_addr <= rd_addr + 1;
@@ -91,23 +90,23 @@ begin
    
    -- write to fifo
    
-   process (i_CLK)
+   process (clock_i)
    begin
-      if rising_edge(i_CLK) then
-         if i_reset = '1' then
+      if rising_edge(clock_i) then
+         if reset_i = '1' then
             wr_dly <= '0';
          else
-            wr_dly <= i_wr;
+            wr_dly <= wr_i;
          end if;
       end if;
    end process;
 
-   wr_advance <= wr_dly and (not i_wr) and (not full);
+   wr_advance <= wr_dly and (not wr_i) and (not full);
    
-   process (i_CLK)
+   process (clock_i)
    begin
-      if rising_edge(i_CLK) then
-         if i_reset = '1' then
+      if rising_edge(clock_i) then
+         if reset_i = '1' then
             wr_addr <= (others => '0');
          elsif wr_advance = '1' then
             wr_addr <= wr_addr + 1;
@@ -117,15 +116,17 @@ begin
    
    -- track number of stored bytes
    
-   process (i_CLK)
+   stored_delta <= std_logic_vector(to_unsigned(1,stored_delta'length)) when (rd_advance = '0' and wr_advance = '1') else 
+                   std_logic_vector(to_unsigned(-1,stored_delta'length)) when (rd_advance = '1' and wr_advance = '0') else
+                   std_logic_vector(to_unsigned(0,stored_delta'length));
+   
+   process (clock_i)
    begin
-      if rising_edge(i_CLK) then
-         if i_reset = '1' then
+      if rising_edge(clock_i) then
+         if reset_i = '1' then
             stored <= (others => '0');
-         elsif rd_advance = '0' and wr_advance = '1' then
-            stored <= stored + 1;
-         elsif rd_advance = '1' and wr_advance = '0' then
-            stored <= stored - 1;
+         else
+            stored <= stored + stored_delta;
          end if;
       end if;
    end process;
@@ -134,15 +135,13 @@ begin
    
    empty <= '1' when stored = std_logic_vector(to_unsigned(0,stored'length)) else '0';
    full <= stored(DEPTH_BITS);
-
+   
    -- output
    
-   o_empty <= empty;
-   o_full_near <= stored(DEPTH_BITS) or (stored(DEPTH_BITS-1) and stored(DEPTH_BITS-2));
-   o_full_almost <= '1' when stored(DEPTH_BITS) = '1' or (stored(DEPTH_BITS-1 downto 1) = std_logic_vector(to_unsigned(-1,stored'length-1))) else '0';
-   o_full <= full;
+   empty_o <= empty;
+   full_o <= full;
    
-   o_raddr <= rd_addr;
-   o_waddr <= wr_addr;
+   raddr_o <= rd_addr;
+   waddr_o <= wr_addr;
 
 end architecture;

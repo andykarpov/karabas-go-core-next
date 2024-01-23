@@ -1,5 +1,5 @@
 
--- ZXN Multiface
+-- Multiface
 -- Copyright 2020 Victor Trucco, Fabio Belavenuto and Alvin Albrecht
 --
 -- This file is part of the ZX Spectrum Next Project
@@ -21,7 +21,6 @@
 
 -- Multiface 1 schematics:
 -- http://www.worldofspectrum.org/pub/sinclair/technical-docs/Multiface1_Schematics.png
--- https://worldofspectrum.net/pub/sinclair/technical-docs/Multiface1_Schematics.gif
 --
 -- Port write 1F,9F: NMI_ACTIVE off
 -- Port read 1F: MF_ENABLE off
@@ -56,11 +55,17 @@ entity multiface is
       clock_i              : in std_logic;
       
       cpu_a_0066_i         : in std_logic;
+      cpu_a_1fxx_i         : in std_logic;
+      cpu_a_7fxx_i         : in std_logic;
+      cpu_a_fexx_i         : in std_logic;
       
       cpu_mreq_n_i         : in std_logic;
       cpu_m1_n_i           : in std_logic;
-      cpu_retn_seen_i      : in std_logic;
-
+      
+      port_1ffd_i          : in std_logic_vector(7 downto 0);
+      port_7ffd_i          : in std_logic_vector(7 downto 0);
+      port_fe_border_i     : in std_logic_vector(2 downto 0);
+      
       enable_i             : in std_logic;
       button_i             : in std_logic;
       
@@ -74,7 +79,8 @@ entity multiface is
       nmi_disable_o        : out std_logic;
       mf_enabled_o         : out std_logic;
       
-      mf_port_en_o         : out std_logic
+      mf_port_en_o         : out std_logic;
+      mf_port_dat_o        : out std_logic_vector(7 downto 0)
    );
 end entity;
 
@@ -141,7 +147,7 @@ begin
             nmi_active <= '0';
          elsif button_pulse = '1' then
             nmi_active <= '1';
-         elsif cpu_retn_seen_i = '1' or ((port_mf_enable_wr_i = '1' or port_mf_disable_wr_i = '1' or (port_mf_disable_rd_i = '1' and mode_p3 = '1')) and port_io_dly = '0') then
+         elsif (port_mf_enable_wr_i = '1' or port_mf_disable_wr_i = '1' or (port_mf_disable_rd_i = '1' and mode_p3 = '1')) and port_io_dly = '0' then
             nmi_active <= '0';
          end if;
       end if;
@@ -175,7 +181,7 @@ begin
             mf_enable <= '0';
          elsif fetch_66 = '1' and cpu_mreq_n_i = '0' then
             mf_enable <= '1';
-         elsif port_mf_disable_rd_i = '1' or cpu_retn_seen_i = '1' then
+         elsif port_mf_disable_rd_i = '1' then
             mf_enable <= '0';
          elsif port_mf_enable_rd_i = '1' then
             mf_enable <= not invisible_eff;
@@ -192,6 +198,7 @@ begin
    
    -- port read
    
-   mf_port_en_o <= '1' when port_mf_enable_rd_i = '1' and invisible_eff = '0' and (mode_128 = '1' or mode_p3 = '1') else '0';
+   mf_port_en_o <= '1' when port_mf_enable_rd_i = '1' and invisible_eff = '0' and (mode_128 = '1' or (mode_p3 = '1' and (cpu_a_1fxx_i = '1' or cpu_a_7fxx_i = '1' or cpu_a_fexx_i = '1'))) else '0';
+   mf_port_dat_o <= (port_7ffd_i(3) & "1111111") when mode_128 = '1' else port_7ffd_i when cpu_a_7fxx_i = '1' else port_1ffd_i when cpu_a_1fxx_i = '1' else ("00000" & port_fe_border_i);
 
 end architecture;

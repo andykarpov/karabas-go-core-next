@@ -163,16 +163,12 @@ utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path spram_320_9.
 utilities_xmdf::xmdfSetData $instance FileSet $fcount type ngc
 incr fcount
 
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path spram_320_9.sym
-utilities_xmdf::xmdfSetData $instance FileSet $fcount type symbol
+utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path spram_320_9.vhd
+utilities_xmdf::xmdfSetData $instance FileSet $fcount type vhdl
 incr fcount
 
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path spram_320_9.v
-utilities_xmdf::xmdfSetData $instance FileSet $fcount type verilog
-incr fcount
-
-utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path spram_320_9.veo
-utilities_xmdf::xmdfSetData $instance FileSet $fcount type verilog_template
+utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path spram_320_9.vho
+utilities_xmdf::xmdfSetData $instance FileSet $fcount type vhdl_template
 incr fcount
 
 utilities_xmdf::xmdfSetData $instance FileSet $fcount relative_path spram_320_9.xco

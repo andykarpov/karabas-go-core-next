@@ -48,8 +48,8 @@
 vlib work 
 vmap work work 
 
-echo "Compiling Core Verilog UNISIM/Behavioral model"
-vlog -work work ../../implement/results/routed.v
+echo "Compiling Core VHDL UNISIM/Behavioral model"
+vcom  -work work ../../implement/results/routed.vhd
 
 echo "Compiling Test Bench Files"
 vcom -work work ../queue_pkg.vhd  
@@ -60,7 +60,7 @@ vcom -work work ../queue_pctrl.vhd
 vcom -work work ../queue_synth.vhd 
 vcom -work work ../queue_tb.vhd
 
-vsim  -t ps -voptargs="+acc" +transport_int_delays -L simprims_ver glbl -sdfmax /queue_tb/queue_synth_inst/queue_inst=../../implement/results/routed.sdf work.queue_tb
+vsim  -t ps -voptargs="+acc" +transport_int_delays -L simprim -sdfmax /queue_tb/queue_synth_inst/queue_inst=../../implement/results/routed.sdf work.queue_tb
 
 add log -r /*
 do wave_mti.do
