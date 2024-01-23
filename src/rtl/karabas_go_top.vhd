@@ -26,8 +26,6 @@
 -- EU, 2024
 ------------------------------------------------------------------------------------------------------------------
 -- TODO:
--- keyboard: add extended keys, remove ps/2 keycodes, profi mode, joysticks mapping
--- mouse: wheel test
 -- joysticks: test
 -- HDD: implement nemoide
 -- FDD: implement
@@ -35,7 +33,8 @@
 -- OSD: think about it
 -- RTC: emulate i2c slave ds1307 chip
 -- GS: add to the zxbus ?
--- 
+-- Bridge second UART to USB!
+-- Upgrade to the latest zxnext version from git
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -66,7 +65,7 @@ entity karabas_go is
 		ESP_BOOT_N 			: inout  STD_LOGIC;
 		UART_RX 				: inout  STD_LOGIC;
 		UART_TX 				: inout  STD_LOGIC;
-		UART_CTS 			: inout  STD_LOGIC;
+		UART_CTS 			: inout  STD_LOGIC := '0'; -- connect to ground to always allow bytes
 
 		WA 					: out  	STD_LOGIC_VECTOR (2 downto 0);
 		WCS_N 				: out  	STD_LOGIC_VECTOR(1 downto 0);
@@ -467,9 +466,6 @@ architecture rtl of karabas_go is
 
 	-- karabas signals --
 
-	-- Keyboard 
-	signal kb_do 						: std_logic_vector(5 downto 0) := "111111";
-	
 	-- Triggers
 	signal kb_hard_reset 			: std_logic := '0';
 	signal kb_scandoubler 			: std_logic := '0';
@@ -1637,27 +1633,14 @@ port map (
 	KB_DAT4 => hid_kb_dat4,
 	KB_DAT5 => hid_kb_dat5,	
 
-	-- joy inputs
-	JOY_TYPE_L => "000", -- todo
-	JOY_TYPE_R => "000",
-	JOY_L => joy_l,
-	JOY_R => joy_r,
-	
 	-- matrix
 	A => zxn_key_row,	
-	KB_DO => kb_do, 
-	EXT_KEYS => zxn_extended_keys,
+	KB_DO => zxn_key_col, 
 	
-	-- keyboard type Profi XT = "00" / Spectrum = "01" / Next = "11"
-	KB_TYPE => "11",
-	
-	-- outputs
-	JOY_DO => open, -- todo: kempston
-
-	KEYCODE => open
+	-- extended keys
+	CANCEL_EXT => zxn_cancel_extended_entries,
+	EXT_KEYS => zxn_extended_keys	
 );
-
-zxn_key_col <= kb_do(4 downto 0);
 
 zxn_joy_left <= joy_l(11 downto 1);
 zxn_joy_right <= joy_r(11 downto 1);
