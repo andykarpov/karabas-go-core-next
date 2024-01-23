@@ -25,6 +25,17 @@
 -- @author Doctor Max <https://github.com/drmax-gc>
 -- EU, 2024
 ------------------------------------------------------------------------------------------------------------------
+-- TODO:
+-- keyboard: add extended keys, remove ps/2 keycodes, profi mode, joysticks mapping
+-- mouse: wheel test
+-- joysticks: test
+-- HDD: implement nemoide
+-- FDD: implement
+-- FT812: ?
+-- OSD: think about it
+-- RTC: emulate i2c slave ds1307 chip
+-- GS: add to the zxbus ?
+-- 
 
 library ieee;
 use ieee.std_logic_1164.all;
