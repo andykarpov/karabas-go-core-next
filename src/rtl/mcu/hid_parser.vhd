@@ -260,7 +260,7 @@ process (RESET, CLK)
 					
 					when X"4f" =>	
 						if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_8) <= '1'; is_cs_used := '1'; end if; -- right
-						ext_keys_int(EX_DOWN) <= '1';
+						ext_keys_int(EX_RIGHT) <= '1';
 
 					-- ESC -> CS + Space
 					when X"29" => 

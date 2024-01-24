@@ -63,9 +63,9 @@ entity karabas_go is
 
 		ESP_RESET_N 		: inout  STD_LOGIC;
 		ESP_BOOT_N 			: inout  STD_LOGIC;
-		UART_RX 				: inout  STD_LOGIC;
+		UART_RX 				: inout	STD_LOGIC;
 		UART_TX 				: inout  STD_LOGIC;
-		UART_CTS 			: inout  STD_LOGIC := '0'; -- connect to ground to always allow bytes
+		UART_CTS 			: inout  STD_LOGIC;
 
 		WA 					: out  	STD_LOGIC_VECTOR (2 downto 0);
 		WCS_N 				: out  	STD_LOGIC_VECTOR(1 downto 0);
@@ -109,7 +109,7 @@ entity karabas_go is
 		FT_SPI_CS_N 		: out  	STD_LOGIC;
 		FT_SPI_SCK 			: out  	STD_LOGIC;
 		FT_SPI_MISO 		: inout  STD_LOGIC;
-		FT_SPI_MOSI 		: inout  STD_LOGIC;
+		FT_SPI_MOSI 		: inout 	STD_LOGIC;
 		FT_INT_N 			: inout  STD_LOGIC;
 		FT_CLK 				: inout  STD_LOGIC;
 		FT_OE_N 				: out  	STD_LOGIC;
@@ -1730,7 +1730,8 @@ SDR_RAS_N <= '1';
 
 -- FT812
 FT_SPI_CS_N <= '1';
-FT_SPI_SCK <= '0';
+FT_SPI_SCK <= '1';
+FT_SPI_MOSI <= '1';
 FT_OE_N <= '1';
 
 ---- V_CLK buf
@@ -1745,6 +1746,9 @@ port map(
 
 -- beeper
 BEEPER <= zxn_speaker_beep;
+
+-- CTS is always ground
+UART_CTS <= '0';
 
 end architecture;
 
