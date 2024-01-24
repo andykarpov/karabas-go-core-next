@@ -26,9 +26,10 @@
 -- EU, 2024
 ------------------------------------------------------------------------------------------------------------------
 -- TODO:
+-- keyboard: extended keys
 -- joysticks: test
 -- HDD: implement nemoide
--- FDD: implement
+-- FDD: implement via bus ?
 -- FT812: ?
 -- OSD: think about it
 -- RTC: emulate i2c slave ds1307 chip
