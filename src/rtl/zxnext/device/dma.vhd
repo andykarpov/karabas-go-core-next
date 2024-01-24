@@ -39,6 +39,7 @@ entity z80dma is
 
       cpu_d_i        : in std_logic_vector(7 downto 0);
       wait_n_i       : in std_logic := '1';
+      dma_delay_i    : in std_logic;
       
       bus_busreq_n_i : in std_logic;     -- busreq in
       cpu_busreq_n_o : out std_logic;    -- busreq from dma
@@ -106,7 +107,7 @@ architecture z80dma_unit of z80dma is
    type dma_seq_t is ( IDLE, START_DMA, WAITING_ACK, TRANSFERING_READ_1, TRANSFERING_READ_2, TRANSFERING_READ_3, TRANSFERING_READ_4, TRANSFERING_WRITE_1, TRANSFERING_WRITE_2, TRANSFERING_WRITE_3, TRANSFERING_WRITE_4, WAITING_CYCLES, FINISH_DMA );
    signal dma_seq_s        : dma_seq_t;
    
-   signal dma_a_s          : std_logic_vector(15 downto 0) := X"FF00"; -- X"FF00" X"00FF";
+   signal dma_a_s          : std_logic_vector(15 downto 0) := X"FF00"; -- X"00FF" --X"FF00"; -- X"FF00" X"00FF";
    signal dma_d_s          : std_logic_vector(7 downto 0);
    signal dma_d_n_s        : std_logic_vector(7 downto 0);
    signal dma_d_p_s        : std_logic_vector(7 downto 0);
@@ -265,7 +266,7 @@ begin
                   
                when START_DMA => 
                
-                  if bus_busreq_n_i = '0' or cpu_bai_n = '0' then
+                  if bus_busreq_n_i = '0' or cpu_bai_n = '0' or dma_delay_i = '1' then
                   
                      -- wait for other dma to finish
                      cpu_busreq_n_s <= '1';
@@ -423,8 +424,12 @@ begin
                      if (R2_portB_preescaler_s > 0) and (('0' & R2_portB_preescaler_s) > DMA_timer_s(13 downto 5)) then
                         dma_seq_s <= WAITING_CYCLES;
                      elsif dma_counter_s < R0_block_len_s then --TO DO: test for block len = 0 - check the datasheet!
-                        dma_seq_s <= TRANSFERING_READ_1;
-                        dma_read_cycle <= '1';
+                        if dma_delay_i = '1' then
+                           dma_seq_s <= START_DMA;
+                        else
+                           dma_seq_s <= TRANSFERING_READ_1;
+                           dma_read_cycle <= '1';
+                        end if;
                      else  
                         dma_seq_s <= FINISH_DMA;
                      end if;

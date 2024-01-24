@@ -8,6 +8,7 @@
 // Tool versions:    L.50 (lin)
 // Description:      This header provides the functions necessary to calculate 
 //                   the DRP register values for the V5 PLL
+// Source:           XAPP879
 //*****************************************************************************
 
 // Define debug to provide extra messages durring elaboration
