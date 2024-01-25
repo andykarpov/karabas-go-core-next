@@ -38,6 +38,7 @@ entity turbosound is
       psg_reg_addr_i : in std_logic;                        -- select a new ay register
       psg_reg_wr_i   : in std_logic;                        -- write to selected register
       psg_d_i        : in std_logic_vector(7 downto 0);     -- data in
+      psg_d_o_reg_i  : in std_logic;                        -- output selected register rather than contents
       psg_d_o        : out std_logic_vector(7 downto 0);    -- selected register's contents
       
       mono_mode_i    : in std_logic_vector(2 downto 0);     -- 0 = stereo, 1 = mono for each psg
@@ -153,6 +154,9 @@ begin
    --
    
    psg0 : entity work.ym2149
+   generic map (
+      AY_ID             => "11"
+   )
    port map (
       CLK               => clock_i,              -- master clock more than 6MHz
       ENA               => clock_en_i,           -- gated clock signal used by ym2149
@@ -161,6 +165,7 @@ begin
       -- data bus
       I_DA              => psg_d_i,
       O_DA              => psg0_do,              -- read from currently selected register
+      I_REG             => psg_d_o_reg_i,
       -- control
       busctrl_addr      => psg0_addr,            -- 1 to change selected register
       busctrl_we        => psg0_we,              -- 1 to write to selected register
@@ -204,6 +209,9 @@ begin
    --
 
    psg1 : entity work.ym2149
+   generic map (
+      AY_ID             => "10"
+   )
    port map (
       CLK               => clock_i,
       ENA               => clock_en_i,
@@ -212,6 +220,7 @@ begin
       -- data bus
       I_DA              => psg_d_i,
       O_DA              => psg1_do,
+      I_REG             => psg_d_o_reg_i,
       -- control
       busctrl_addr      => psg1_addr,
       busctrl_we        => psg1_we,
@@ -255,6 +264,9 @@ begin
    --
    
    psg2 : entity work.ym2149
+   generic map (
+      AY_ID             => "01"
+   )
    port map (
       CLK               => clock_i,
       ENA               => clock_en_i,
@@ -263,6 +275,7 @@ begin
       -- data bus
       I_DA              => psg_d_i,
       O_DA              => psg2_do,
+      I_REG             => psg_d_o_reg_i,
       -- control
       busctrl_addr      => psg2_addr,
       busctrl_we        => psg2_we,

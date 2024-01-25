@@ -21,11 +21,9 @@
 --
 -- This module handles the im2 logic for an interrupting peripheral.
 -- 
--- The input is (i_int) which is active high and indicates that the
--- peripheral wants to interrupt.  Since the interrupt status can
--- only change when /m1 is high, this signal should be held high
--- for multiple cycles and can be held high until the module indicates
--- that the isr has been serviced (o_isr_serviced).
+-- The input is (i_int_req) which is active high and indicates that the
+-- peripheral wants to interrupt.  This signal should be held high until
+-- the module indicates that the isr has been serviced (o_isr_serviced).
 --
 -- The daisy chain logic is implemented through (i_iei) and (o_ieo).
 -- The highest priority device should have its iei signal set to '1'
@@ -34,7 +32,7 @@
 --
 -- The variable width interrupt vector is output normally as all zeroes
 -- unless the device must output its vector during an interrupt ack
--- cycle.  This allows multiple modules to have their vector output's
+-- cycle.  This allows multiple modules to have their vector outputs
 -- logically ORed together to easily form the correct vector
 -- presented to the z80.  This resulting vector should be output only
 -- while /m1 and /iorq are both low.
@@ -57,18 +55,23 @@ entity im2_device is
       i_CLK_CPU         : in std_logic;
       i_reset_n         : in std_logic;
       
+      i_im2_mode        : in std_logic;   -- 1 if z80 is in im 2 mode (set 1 if unknown)
+      
       i_m1_n            : in std_logic;
       i_iorq_n          : in std_logic;
       
-      i_int_req         : in std_logic;   -- peripheral wants to generate an interrupt
+      i_int_req         : in std_logic;   -- peripheral wants to generate an interrupt, hold high
       o_int_n           : out std_logic;  -- interrupt signal for z80
+      
+      i_dma_int_en      : in  std_logic;  -- enable dma interruption
+      o_dma_int         : out std_logic;  -- interrupt dma operation
       
       i_reti_decode     : in std_logic;
       i_reti_seen       : in std_logic;
-      o_isr_serviced    : out std_logic;
+      o_isr_serviced    : out std_logic;  -- when set, reset i_int_req on next rising edge of clock
       
       i_iei             : in std_logic;   -- im2 daisy chain logic
-      o_ieo             : out std_logic;   -- im2 daisy chain logic
+      o_ieo             : out std_logic;  -- im2 daisy chain logic
 
       i_vec             : in std_logic_vector(VEC_BITS-1 downto 0);   -- peripheral im2 vector
       o_vec             : out std_logic_vector(VEC_BITS-1 downto 0)   -- generated im2 vector, must be qualified by /m1 * /iorq
@@ -96,17 +99,17 @@ begin
       end if;
    end process;
    
-   process (state, i_m1_n, i_iorq_n, i_int_req, i_iei, i_reti_seen)
+   process (state, i_m1_n, i_iorq_n, i_int_req, i_iei, i_reti_seen, i_im2_mode)
    begin
       case state is
          when S_0 =>
-            if i_m1_n = '1' and i_int_req = '1' then
+            if i_int_req = '1' and i_m1_n = '1' then
                state_next <= S_REQ;
             else
                state_next <= S_0;
-            end if;
+            end if;          
          when S_REQ =>
-            if i_m1_n = '0' and i_iorq_n = '0' and i_iei = '1' then
+            if i_m1_n = '0' and i_iorq_n = '0' and i_iei = '1' and i_im2_mode = '1' then
                state_next <= S_ACK;
             else
                state_next <= S_REQ;
@@ -118,7 +121,7 @@ begin
                state_next <= S_ACK;
             end if;
          when S_ISR =>
-            if i_reti_seen = '1' and i_iei = '1' then
+            if i_reti_seen = '1' and i_iei = '1' and i_im2_mode = '1' then
                state_next <= S_0;
             else
                state_next <= S_ISR;
@@ -144,11 +147,12 @@ begin
 
    -- output z80 interrupt request
    
-   o_int_n <= '0' when state = S_REQ and i_iei = '1' else '1';
+   o_int_n <= '0' when state = S_REQ and i_iei = '1' and i_im2_mode = '1' else '1';
+   o_dma_int <= '1' when state /= S_0 and i_dma_int_en = '1' else '0';
 
    -- output interrupt vector
    
-   o_vec <= i_vec when state = S_ACK else (others => '0');
+   o_vec <= i_vec when state = S_ACK or state_next = S_ACK else (others => '0');  -- qualify with /m1 * /iorq
    
    -- indicate isr was serviced
    

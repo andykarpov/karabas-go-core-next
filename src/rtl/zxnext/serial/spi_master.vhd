@@ -1,8 +1,7 @@
 
 -- SPI Master
 --
--- Copyright 2009-2010 Mike Stirling
--- Copyright 2020 Alvin Albrecht and Fabio Belavenuto
+-- Copyright 2020-2022 Alvin Albrecht and Fabio Belavenuto
 --
 -- All rights reserved
 --
@@ -33,114 +32,148 @@
 -- POSSIBILITY OF SUCH DAMAGE.
 --
 
--- Mike Stirling's original implementation:
--- https://github.com/mikestir/fpga-spectrum/blob/master/spi.vhd
-
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.std_logic_unsigned.all;
 
 entity spi_master is
-   port (
-      clock_i        : in std_logic;
-      reset_i        : in std_logic;
+   port
+   (
+      i_CLK          : in  std_logic;     -- twice the spi sck frequency
+      i_reset        : in  std_logic;
       
-      spi_sck_o      : out std_logic;
-      spi_mosi_o     : out std_logic;
-      spi_miso_i     : in std_logic;
+      i_spi_rd       : in  std_logic;     -- i/o read from spi
+      i_spi_wr       : in  std_logic;     -- i/o write to spi
       
-      spi_mosi_wr_i  : in std_logic;
-      spi_mosi_dat_i : in std_logic_vector(7 downto 0);
+      i_spi_mosi_dat : in  std_logic_vector(7 downto 0);   -- data to write to spi (i/o write)
+      o_spi_miso_dat : out std_logic_vector(7 downto 0);   -- data read from spi (i/o read)
       
-      spi_miso_rd_i  : in std_logic;
-      spi_miso_dat_o : out std_logic_vector(7 downto 0);
+      o_spi_sck      : out std_logic;     -- must synchronize with rising edge of i_CLK externally (on way out from fpga)
+      o_spi_mosi     : out std_logic;     -- must synchronize with rising edge of i_CLK externally (on way out from fpga)
+      i_spi_miso     : in  std_logic;     -- must synchronize with rising edge of i_CLK externally (on way into fpga)
       
-      spi_wait_n_o   : out std_logic   -- wait signal for dma
+      o_spi_wait_n   : out std_logic      -- wait signal for dma
    );
 end entity;
 
 architecture rtl of spi_master is
 
    signal spi_begin        : std_logic;
-   signal counter_is_zero  : std_logic;
-   signal counter          : std_logic_vector(3 downto 0);
-   signal sck              : std_logic;
-   signal shift            : std_logic_vector(8 downto 0);
-   signal miso_dat         : std_logic_vector(7 downto 0);
-
+   
+   signal state_last       : std_logic;
+   signal state_idle       : std_logic;
+   signal state_r          : std_logic_vector(4 downto 0) := "10000";
+   
+   signal oshift_r         : std_logic_vector(7 downto 0) := (others => '1');
+   
+   signal state_r0_d       : std_logic := '0';
+   signal state_last_d     : std_logic := '0';
+   
+   signal ishift_r         : std_logic_vector(6 downto 0) := (others => '0');
+   signal miso_dat         : std_logic_vector(7 downto 0) := (others => '0');
+   
 begin
 
-   -- start condition
+   -- CPOL = 0, CPHA = 0
+
+   -- spi transaction begin
    
-   spi_begin <= '1' when (spi_miso_rd_i = '1' or spi_mosi_wr_i = '1') and counter_is_zero = '1' else '0';
+   spi_begin <= '1' when (state_last = '1' or state_idle = '1') and (i_spi_rd = '1' or i_spi_wr = '1') else '0';
    
-   -- spi bit counter
+   -- state counter for one byte transfer
    
-   counter_is_zero <= '1' when counter = X"0" else '0';
+   state_last <= '1' when state_r(3 downto 0) = X"F" else '0';
+   state_idle <= state_r(4);
    
-   process (clock_i)
+   process (i_CLK)
    begin
-      if falling_edge(clock_i) then
-         if reset_i = '1' then
-            counter <= (others => '0');
-         elsif counter_is_zero = '0' or spi_begin = '1' then
-            counter <= counter + 1;
-         end if;
-      end if;
-   end process;
-   
-   process (clock_i)
-   begin
-      if falling_edge(clock_i) then
-         if reset_i = '1' then
-            sck <= '0';
-         else
-            sck <= counter(0);
-         end if;
-      end if;
-   end process;
-   
-   -- spi shift register
-   
-   process (clock_i)
-   begin
-      if falling_edge(clock_i) then
-         if reset_i = '1' then
-            shift <= (others => '1');
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            state_r <= "10000";
          elsif spi_begin = '1' then
-            if spi_miso_rd_i = '1' then
-               shift <= (others => '1');
-            else
-               shift <= spi_mosi_dat_i & '1';
-            end if;
-         elsif counter_is_zero = '0' then
-            if sck = '0' then
-               shift(0) <= spi_miso_i;
-            else
-               shift <= shift(7 downto 0) & '1';
-            end if;
+            state_r <= (others => '0');
+         elsif state_idle = '0' then
+            state_r <= state_r + 1;
+         end if;
+      end if;
+   end process;
+   
+   -- output shift register
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            oshift_r <= (others => '1');
+         elsif spi_begin = '1' and i_spi_rd = '1' then
+            oshift_r <= (others => '1');
+         elsif spi_begin = '1' and i_spi_wr = '1' then
+            oshift_r <= i_spi_mosi_dat;
+         elsif state_r(0) = '1' then
+            oshift_r <= oshift_r(6 downto 0) & '1';
+         end if;
+      end if;
+   end process;
+   
+   -- input shift register
+   
+   -- delay control signals one cycle due to external synchronization of spi sck and mosi
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            state_r0_d <= '0';
+         else
+            state_r0_d <= state_r(0);
+         end if;
+      end if;
+   end process;
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            state_last_d <= '0';
+         else
+            state_last_d <= state_last;
          end if;
       end if;
    end process;
 
-   -- miso data
+   -- independent from output shift register because spi signals are synchronized when they leave or enter the fpga
+   -- without synchronization, problems are seen in some sd cards at higher system frequencies
    
-   process (clock_i)
+   process (i_CLK)
    begin
-      if rising_edge(clock_i) then
-         if counter_is_zero = '1' then
-            miso_dat <= shift(7 downto 0);
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            ishift_r <= (others => '1');
+         elsif state_r0_d = '1' then
+            ishift_r <= ishift_r(5 downto 0) & i_spi_miso;
          end if;
       end if;
    end process;
    
-   -- connect pins
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            miso_dat <= (others => '1');
+         elsif state_last_d = '1' then
+            miso_dat <= ishift_r & i_spi_miso;
+         end if;
+      end if;
+   end process;
    
-   spi_sck_o <= sck;
-   spi_mosi_o <= shift(8);
-   spi_miso_dat_o <= miso_dat;
+   -- spi signals
    
-   spi_wait_n_o <= '1' when counter_is_zero = '1' else '0';
+   o_spi_sck <= state_r(0);     -- must be synchronized on rising edge of i_CLK
+   o_spi_mosi <= oshift_r(7);   -- must be synchronized on rising edge of i_CLK
+
+   o_spi_miso_dat <= miso_dat;
+
+   o_spi_wait_n <= state_idle or state_last_d;
 
 end architecture;

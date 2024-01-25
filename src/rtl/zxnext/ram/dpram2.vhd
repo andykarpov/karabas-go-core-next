@@ -35,11 +35,13 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.textio.all;
 
 entity dpram2 is
    generic (
       addr_width_g : integer := 8;
-      data_width_g : integer := 8
+      data_width_g : integer := 8;
+      init_file_g  : string  := "init/none.bin.txt"
    );
    port (
       clk_a_i  : in  std_logic;
@@ -56,35 +58,46 @@ end dpram2;
 
 architecture rtl of dpram2 is
 
-   type ram_t is array (natural range 2**addr_width_g-1 downto 0) of std_logic_vector(data_width_g-1 downto 0);
-   signal ram_q : ram_t
-      -- pragma translate_off
-      := (others => (others => '0'))
-      -- pragma translate_on
-   ;
-   signal   read_addr_a_q,
-            read_addr_b_q  : unsigned(addr_width_g-1 downto 0);
+   type ram_t is array (0 to 2**addr_width_g-1) of bit_vector(data_width_g-1 downto 0);
+
+   impure function InitRamFromFile (RamFileName : in string) return ram_t is
+      file     RamFile     : text is in RamFileName;
+      variable RamFileLine : line;
+      variable RAM         : ram_t;
+      variable RAM_0       : ram_t := (others => (others => '0'));
+   begin
+      if RamFileName = "init/none.bin.txt" then
+         return RAM_0;
+      else
+         for I in ram_t'range loop
+            readline (RamFile, RamFileLine);
+            read (RamFileLine, RAM(I));
+         end loop;
+         return RAM;
+      end if;
+   end function;
+
+   signal ram_q : ram_t := InitRamFromFile(init_file_g);
+
+   signal read_addr_a_q : unsigned(addr_width_g-1 downto 0);
+   signal read_addr_b_q : unsigned(addr_width_g-1 downto 0);
 
 begin
 
    mem_a: process (clk_a_i)
-      variable read_addr_v    : unsigned(addr_width_g-1 downto 0);
    begin
       if rising_edge(clk_a_i) then
-         read_addr_v := unsigned(addr_a_i);
          if we_i = '1' then
-            ram_q(to_integer(read_addr_v)) <= data_a_i;
+            ram_q(to_integer(unsigned(addr_a_i))) <= to_bitvector(data_a_i);
          end if;
-         data_a_o <= ram_q(to_integer(read_addr_v));
+         data_a_o <= to_stdlogicvector(ram_q(to_integer(unsigned(addr_a_i))));
       end if;
    end process mem_a;
 
    mem_b: process (clk_b_i)
-      variable read_addr_v    : unsigned(addr_width_g-1 downto 0);
    begin
       if rising_edge(clk_b_i) then
-         read_addr_v := unsigned(addr_b_i);
-         data_b_o    <= ram_q(to_integer(read_addr_v));
+         data_b_o    <= to_stdlogicvector(ram_q(to_integer(unsigned(addr_b_i))));
       end if;
    end process mem_b;
 

@@ -1,6 +1,5 @@
-
 -- Flashboot
--- Copyright 2020 Fabio Belavenuto
+-- Copyright 2020 Fabio Belavenuto and Alvin Albrecht
 --
 -- This file is part of the ZX Spectrum Next Project
 -- <https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/tree/master/cores>
@@ -19,210 +18,168 @@
 -- along with the ZX Spectrum Next FPGA source code.  If not, see 
 -- <https://www.gnu.org/licenses/>.
 
+-- Spartan S6
+-- 128Mbit flash chip operated in standard 24-bit spi mode
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.std_logic_unsigned.all;
 
 library UNISIM;
 use UNISIM.VComponents.all;
 
 entity flashboot is
-   port(
-      reset_i     : in  std_logic;
-      clock_i     : in  std_logic;
-      start_i     : in  std_logic;
-      spiaddr_i   : in  std_logic_vector(31 downto 0)
+   port
+   (
+      i_CLK       : in std_logic;
+      i_reset     : in std_logic;
+      
+      i_start     : in std_logic;
+      
+      i_coreid    : in std_logic_vector(4 downto 0);
+      i_failid    : in std_logic_vector(4 downto 0)
    );
 end entity;
 
-architecture Behavioral of flashboot is
+architecture rtl of flashboot is
 
-   ----------------------------------------------------------------------------
-   -- ICAP configuration data codes
-   ----------------------------------------------------------------------------
-   --  For custom data codes like the ones for reading back, take a look to:
-   --    [OPCODES]        UG380 page 88   table  5-23
-   --    [CFG PACKETS]    UG380 page 89   tables 5-{24, 25}
-   --    [CG REGISTERS]   UG380 page 90   table  5-30
-   ----------------------------------------------------------------------------
-   constant DUMMY_C        : std_logic_vector(15 downto 0) := X"FFFF";  -- 
-   constant NOOP_C         : std_logic_vector(15 downto 0) := X"2000";  -- 
-   constant NULL1_C        : std_logic_vector(15 downto 0) := X"0000";  --
-   constant NULL2_C        : std_logic_vector(15 downto 0) := X"1111";  -- 
-   constant SYNCH_C        : std_logic_vector(15 downto 0) := X"AA99";  --
-   constant SYNCL_C        : std_logic_vector(15 downto 0) := X"5566";  --
-   constant CMD_WR_GEN1_C  : std_logic_vector(15 downto 0) := X"3261";  -- 
-   constant CMD_WR_GEN2_C  : std_logic_vector(15 downto 0) := X"3281";  -- 
-   constant CMD_WR_CMD_C   : std_logic_vector(15 downto 0) := X"30A1";  -- 
-   constant CMD_WR_MOD_C   : std_logic_vector(15 downto 0) := X"3301";  -- 
-   constant CMD_IPROG_C    : std_logic_vector(15 downto 0) := X"000E";  --
-   constant BIT4X_C        : std_logic_vector(15 downto 0) := X"3100";  -- 
+   -- icap program
+   
+   type command_list_t is array(0 to 13) of std_logic_vector(17 downto 0);
+   constant command_list   : command_list_t := (
+      "11" & X"FFFF",  -- dummy word (looped, inactive)
+      "00" & X"AA99",  -- sync word
+      "00" & X"5566",  -- sync word
+      "00" & X"30A1",  -- type 1 write one word to CMD
+      "00" & X"0000",  --   null
+--      "00" & X"31E1",  -- type 1 write one word to CWDT
+--      "00" & X"FFFF",  --   wait 64K cycles for sync
+      "00" & X"3261",  -- type 1 write one word to GENERAL_1
+      "10" & X"0000",  --   multiboot start address 15:0
+      "00" & X"3281",  -- type 1 write one word to GENERAL_2
+      "10" & X"0001",  --   multiboot opcode and start address 23:16
+--      "00" & X"32A1",  -- type 1 write one word to GENERAL_3
+--      "10" & X"0002",  --   multiboot fallback start address 15:0
+--      "00" & X"32C1",  -- type 1 write one word to GENERAL_4
+--      "10" & X"0003",  --   multiboot fallback opcode and start address 23:16
+--      "00" & X"30A1",  -- type 1 write one word to CMD
+--      "00" & X"0000",  --   null
+      "00" & X"3301",  -- type 1 write one word to MODE
+      "00" & X"3100",  --   bitstream spi x 4
+--      "00" & X"3201",  -- type 1 write one word to HC_OPT_REG
+--      "00" & X"001F",  --   do not skip initialization
+      "00" & X"30A1",  -- type 1 write one word to CMD
+      "00" & X"000E",  --   IPROG
+      "00" & X"2000"   -- type 1 nop  (looped)
+   );
 
-   type states_t is (IDLE, SYNC_H, SYNC_L, GEN1_H, GEN1_L, GEN2_H, GEN2_L, NUL_H,
-            NUL_L, MOD_H, MOD_L, RBT_H, RBT_L, NOOP_0, NOOP_1, NOOP_2, NOOP_3);
+   -- ^ ce_n,wr_n = 10 indicates data comes from source other than command 15:0
 
-   signal state_s       : states_t;
-   signal next_state_s  : states_t;
-
-   signal icap_ce_r_s   : std_logic;
-   signal icap_wr_r_s   : std_logic;
-   signal icap_ce_s     : std_logic;
-   signal icap_wr_s     : std_logic;
-   signal icap_i_r_s    : std_logic_vector(15 downto 0);
-   signal icap_i_s      : std_logic_vector(15 downto 0);
-
--- signal spi_addr_s    : std_logic_vector(31 downto 0)     := X"6B000000";   -- 0B = Fast Read, 3B = Dual Fast Read, 6B = Quad Fast Read
+   signal command_res      : std_logic_vector(15 downto 0);
+   signal swizzle          : std_logic_vector(15 downto 0);
+   
+   signal coreid           : std_logic_vector(4 downto 0);
+   signal spi_address      : std_logic_vector(31 downto 0);
+   
+   type state_t            is (S_0, S_1, S_LOAD);
+   signal state            : state_t := S_0;
+   signal state_next       : state_t;
+   
+   signal ip               : std_logic_vector(3 downto 0) := (others => '0');  -- command_list'length
+   signal command          : std_logic_vector(17 downto 0);
 
 begin
 
-   ICAP_SPARTAN6_inst : ICAP_SPARTAN6
-   port map (
-      CLK   => clock_i,          -- 1-bit input: Clock input
-      CE    => icap_ce_s,        -- 1-bit input: Active-Low ICAP Enable input
-      I     => icap_i_s,         -- 16-bit input: Configuration data input bus
-      WRITE => icap_wr_s         -- 1-bit input: Read/Write control input
-   );
+   -- ICAP Configuration Functions
 
-   -- assign values
-   process(clock_i)
+   icap: ICAP_SPARTAN6
+   port map
+   (
+      CLK   => i_CLK,                        -- input clock < 20 MHz
+      CE    => command(17) and command(16),  -- active low select
+      WRITE => command(16),                  -- 0 = write, 1 = read
+      I     => swizzle                       -- 16-bit input
+   );
+   
+   process (command, spi_address)
    begin
-      if rising_edge(clock_i) then
-         -- First we order the bits according to UG380 Table2-5 page 37, as specified in page 126
-         icap_i_s(0)    <= icap_i_r_s(7);  
-         icap_i_s(1)    <= icap_i_r_s(6);
-         icap_i_s(2)    <= icap_i_r_s(5);
-         icap_i_s(3)    <= icap_i_r_s(4);
-         icap_i_s(4)    <= icap_i_r_s(3);  
-         icap_i_s(5)    <= icap_i_r_s(2);
-         icap_i_s(6)    <= icap_i_r_s(1);
-         icap_i_s(7)    <= icap_i_r_s(0);
-         icap_i_s(8)    <= icap_i_r_s(15);  
-         icap_i_s(9)    <= icap_i_r_s(14);
-         icap_i_s(10)   <= icap_i_r_s(13);
-         icap_i_s(11)   <= icap_i_r_s(12);
-         icap_i_s(12)   <= icap_i_r_s(11);  
-         icap_i_s(13)   <= icap_i_r_s(10);
-         icap_i_s(14)   <= icap_i_r_s(9);
-         icap_i_s(15)   <= icap_i_r_s(8);
-         icap_wr_s      <= icap_wr_r_s;
-         icap_ce_s      <= icap_ce_r_s;
-      end if;
+      case command(17 downto 16) is
+         when "10" =>
+            if command(0) = '0' then
+               command_res <= spi_address(15 downto 0);
+            else
+               command_res <= spi_address(31 downto 16);
+            end if;
+         when others =>
+            command_res <= command(15 downto 0);
+      end case;
    end process;
 
-   -- next state
-   process(clock_i)
+   process (command_res)
    begin
-      if rising_edge(clock_i) then
-         if reset_i = '1' then
-            state_s <= IDLE;
+      for I in 0 to 7 loop
+         swizzle(I) <= command_res(7-I);
+         swizzle(I+8) <= command_res(7-I+8);
+      end loop;
+   end process;
+
+   -- SPI Offsets
+   
+--   coreid <= i_coreid when command(1) = '0' else i_failid;
+   coreid <= i_coreid;
+   
+   spi_address <= X"6B" & coreid & "000" & X"0000";   -- core images every 512K
+--   spi_address <= X"0B" & coreid & "000" & X"0000";   -- core images every 512K
+
+   -- State Machine
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            state <= S_0;
          else
-            state_s <= next_state_s;
+            state <= state_next;
          end if;
       end if;
    end process;
-
-   -- FSM
-   process (state_s, start_i, spiaddr_i)
+   
+   process (state, i_start)
    begin
-      case state_s is
-         when IDLE =>
-            if start_i = '1' then
-               next_state_s   <= SYNC_H;
-               icap_ce_r_s    <= '0';
-               icap_wr_r_s    <= '0';
-               icap_i_r_s     <= SYNCH_C;
+      case state is
+         when S_0 =>
+            if i_start = '0' then
+               state_next <= S_1;
             else
-               next_state_s   <= IDLE;
-               icap_ce_r_s    <= '1';
-               icap_wr_r_s    <= '1';
-               icap_i_r_s     <= DUMMY_C;
+               state_next <= S_0;
             end if;
-         when SYNC_H =>
-            next_state_s   <= SYNC_L;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= SYNCL_C;
-         when SYNC_L =>
-            next_state_s   <= NUL_H;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= CMD_WR_CMD_C;
-         when NUL_H =>
-            next_state_s   <= GEN1_H;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= NULL1_C;
-         when GEN1_H =>
-            next_state_s   <= GEN1_L;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= CMD_WR_GEN1_C;
-         when GEN1_L =>
-            next_state_s   <= GEN2_H;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= spiaddr_i(15 downto 0);
-         when GEN2_H =>
-            next_state_s   <= GEN2_L;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= CMD_WR_GEN2_C;
-         when GEN2_L =>
-            next_state_s   <= MOD_H;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= spiaddr_i(31 downto 16);
-         when MOD_H =>
-            next_state_s   <= MOD_L;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= CMD_WR_MOD_C;
-         when MOD_L =>
-            next_state_s   <= NUL_L;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= BIT4X_C;
-         when NUL_L =>
-            next_state_s   <= RBT_H;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= CMD_WR_CMD_C;
-         when RBT_H =>
-            next_state_s   <= RBT_L;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= CMD_IPROG_C;
-         when RBT_L =>
-            next_state_s   <= NOOP_0;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= NOOP_C;
-         when NOOP_0 =>
-            next_state_s   <= NOOP_1;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= NOOP_C;
-         when NOOP_1 =>
-            next_state_s   <= NOOP_2;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= NOOP_C;
-         when NOOP_2 =>
-            next_state_s   <= NOOP_3;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= NOOP_C;
-         when NOOP_3 =>
-            next_state_s   <= IDLE;
-            icap_ce_r_s    <= '0';
-            icap_wr_r_s    <= '0';
-            icap_i_r_s     <= NULL2_C;
+         when S_1 =>
+            if i_start = '1' then
+               state_next <= S_LOAD;
+            else
+               state_next <= S_1;
+            end if;
+         when S_LOAD =>
+            state_next <= S_LOAD;
          when others =>
-            next_state_s   <= IDLE;
-            icap_ce_r_s    <= '1';
-            icap_wr_r_s    <= '1';
-            icap_i_r_s     <= NULL2_C;
+            state_next <= S_0;
       end case;
    end process;
+   
+   -- instruction pointer
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if (state /= S_LOAD) then
+            ip <= (others => '0');
+         elsif ip /= (command_list'length - 1) then
+            ip <= ip + 1;
+         end if;
+      end if;
+   end process;
+   
+   command <= command_list(to_integer(unsigned(ip)));   -- ce_n, wr_n, command
 
 end architecture;

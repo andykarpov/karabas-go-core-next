@@ -1,6 +1,6 @@
-
 -- PS2 Keyboard
 -- Copyright 2020 Fabio Belavenuto
+-- Copyright 2021 Alvin Albrecht
 --
 -- This file is part of the ZX Spectrum Next Project
 -- <https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/tree/master/cores>
@@ -19,257 +19,373 @@
 -- along with the ZX Spectrum Next FPGA source code.  If not, see 
 -- <https://www.gnu.org/licenses/>.
 
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
+-- ps2 button state is represented in an 8x7 matrix
+-- when the physical membrane is scanned, the ps2 inserts column data
+-- caps + sym shift presses are counted; shifts are not lost in multiple keys
+-- typematic filtered so that shift counts remain accurate
+-- F9 = multiface nmi button, F10 = divmmc nmi button
+-- function keys work as on membrane: F9 + number but are also programmable
+-- pause/break resets the ps2 matrix state
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use ieee.std_logic_unsigned.all;
 
 entity ps2_keyb is
    generic
    (
-      CLK_KHZ        : integer
+      CLK_KHZ           : integer
    );
-   port 
+   port
    (
-      enable_i       : in    std_logic;
-      clock_i        : in    std_logic;
-      clock_180o_i   : in    std_logic;
-      clock_ps2_i    : in    std_logic;
-      reset_i        : in    std_logic;
-      
-      -- PS/2 interface
-      ps2_clk_i      : in std_logic;
-      ps2_data_i     : in std_logic;
-      ps2_clk_o      : out std_logic;
-      ps2_data_o     : out std_logic;
-      ps2_data_out   : out std_logic;
-      ps2_clk_out    : out std_logic;
-         
-      -- CPU address bus (row)
-      rows_i         : in    std_logic_vector( 7 downto 0);
-      
-      -- Column outputs
-      cols_o         : out   std_logic_vector( 4 downto 0);
-      functionkeys_o : out   std_logic_vector(12 downto 1);
-      
-      --
-      core_reload_o  : out   std_logic;
-      keymap_addr_i  : in    std_logic_vector(8 downto 0);
-      keymap_data_i  : in    std_logic_vector(8 downto 0);
-      keymap_we_i    : in    std_logic
+      i_CLK             : in std_logic;
+      i_CLK_n           : in std_logic;
+      i_CLK_PS2         : in std_logic;
+      i_reset           : in std_logic;
+      -- ps2 interface
+      i_ps2_clk_in      : in std_logic;
+      i_ps2_data_in     : in std_logic;
+      o_ps2_clk_out_en  : out std_logic;
+      o_ps2_clk_out     : out std_logic;
+      o_ps2_data_out_en : out std_logic;
+      o_ps2_data_out    : out std_logic;
+      -- membrane interaction
+      i_membrane_row    : in std_logic_vector(2 downto 0);
+      o_membrane_col    : out std_logic_vector(6 downto 0);
+      -- nmi button simulation
+      o_mf_nmi_n        : out std_logic;
+      o_divmmc_nmi_n    : out std_logic;
+      -- function key simulation
+      o_ps2_func_keys_n : out std_logic_vector(7 downto 0);
+      -- programmable keymap
+      i_keymap_addr     : in std_logic_vector(8 downto 0);
+      i_keymap_data     : in std_logic_vector(7 downto 0);
+      i_keymap_we       : in std_logic
    );
 end entity;
 
 architecture rtl of ps2_keyb is
 
-   type key_matrix_t is array (7 downto 0) of std_logic_vector(4 downto 0);
-   signal matrix_q         : key_matrix_t;
-
-   signal ps2_data_s       : std_logic_vector(7 downto 0);
-   signal ps2_valid_s      : std_logic;
-   signal keymap_clock_s   : std_logic;
-   signal keymap_addr_s    : std_logic_vector(8 downto 0);
-   signal keymap_data_s    : std_logic_vector(8 downto 0);
-   signal release_s        : std_logic;
-   signal extended_s       : std_logic;
-   signal k1_s, k2_s, k3_s, k4_s,
-          k5_s, k6_s, k7_s, k8_s : std_logic_vector(4 downto 0);
-
-   signal data_send_s      : std_logic_vector(7 downto 0);
-   signal data_send_rdy_s  : std_logic                      := '0';
-   signal ctrl_s           : std_logic                      := '1';
-   signal alt_s            : std_logic                      := '1';
-
-   -- Function keys
-   signal fnkeys_s         : std_logic_vector(12 downto 1)  := (others => '0');
+   signal capshift_count_zero    : std_logic;
+   signal capshift_count         : std_logic_vector(2 downto 0);
    
-   --
-   signal ps2_alt0_clk_io  : std_logic;
-   signal ps2_alt0_data_io : std_logic;
-   signal ps2_alt0_valid_s : std_logic;
-   signal ps2_alt0_data_s  : std_logic_vector(7 downto 0);
-   signal ps2_alt1_clk_io  : std_logic;
-   signal ps2_alt1_data_io : std_logic;
-   signal ps2_alt1_valid_s : std_logic;
-   signal ps2_alt1_data_s  : std_logic_vector(7 downto 0);
--- signal ps2_sigsend_s : std_logic;
+   signal symshift_count_zero    : std_logic;
+   signal symshift_count         : std_logic_vector(2 downto 0);
+
+   type key_matrix_t is array (7 downto 0) of std_logic_vector(6 downto 0);
+   signal matrix_state           : key_matrix_t := ((others => (others => '1')));
    
- begin
+   signal row_0_n                : std_logic;
+   signal row_7_n                : std_logic;
+   
+   signal ps2_keymap_data        : std_logic_vector(8 downto 0);
+   
+   signal ps2_current_keycode    : std_logic_vector(9 downto 0);
+   signal ps2_last_keycode       : std_logic_vector(9 downto 0);
+   
+   signal ps2_code_valid         : std_logic;
+   signal ps2_key_valid          : std_logic;
+   signal ps2_fk_valid           : std_logic;
+   signal ps2_matrix_reset       : std_logic;
+   
+   signal ps2_receive_valid      : std_logic;
+   signal ps2_receive_valid_d    : std_logic;
+   signal ps2_receive_valid_re   : std_logic;
+   signal ps2_receive_data       : std_logic_vector(7 downto 0);
+   signal ps2_send_valid         : std_logic := '0';
 
-   keymap_clock_s <= clock_180o_i;
+   signal ps2_data_01            : std_logic;
+   signal ps2_data_09            : std_logic;
+   signal ps2_data_1f            : std_logic;
+   signal ps2_data_27            : std_logic;
+   signal ps2_data_aa            : std_logic;
+   signal ps2_data_e0            : std_logic;
+   signal ps2_data_e1            : std_logic;
+   signal ps2_data_f0            : std_logic;
+   
+   signal clk_ps2_d              : std_logic;
+   signal clk_ps2_re             : std_logic;
+   
+   type state_t is (KM_IDLE, KM_READ, KM_END);
+   signal state                  : state_t;
+   signal state_next             : state_t;
+   
+   signal ps2_key_extend         : std_logic;
+   signal ps2_key_release        : std_logic;
 
-   -- The keymaps
-   keymaps: entity work.keymaps
-   port map (
-      clock_i     => keymap_clock_s,
-      addr_wr_i   => keymap_addr_i,
-      data_i      => keymap_data_i,
-      we_i        => keymap_we_i,
-      addr_rd_i   => keymap_addr_s,
-      data_o      => keymap_data_s
+begin
+
+   -- nmi buttons simulated via F9 and F10
+   -- these must be singled out to detect them the same way as the button presses
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or ps2_matrix_reset = '1' then
+            o_mf_nmi_n <= '1';
+         elsif ps2_key_valid = '1' and ((ps2_key_extend = '0' and ps2_data_01 = '1') or (ps2_key_extend = '1' and ps2_data_1f = '1')) then
+            o_mf_nmi_n <= ps2_key_release;
+         end if;
+      end if;
+   end process;
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or ps2_matrix_reset = '1' then
+            o_divmmc_nmi_n <= '1';
+         elsif ps2_key_valid = '1' and ((ps2_key_extend = '0' and ps2_data_09 = '1') or (ps2_key_extend = '1' and ps2_data_27 = '1')) then
+            o_divmmc_nmi_n <= ps2_key_release;
+         end if;
+      end if;
+   end process;
+   
+   -- matrix representation
+   
+   capshift_count_zero <= '1' when capshift_count = std_logic_vector(to_unsigned(0,capshift_count'length)) else '0';
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or ps2_matrix_reset = '1' then
+            capshift_count <= (others => '0');
+         elsif ps2_key_valid = '1' and ps2_keymap_data(6) = '1' then
+            if ps2_key_release = '0' then
+               capshift_count <= capshift_count + 1;
+            elsif capshift_count_zero = '0' then
+               capshift_count <= capshift_count - 1;
+            end if;
+         end if;
+      end if;
+   end process;
+   
+   symshift_count_zero <= '1' when symshift_count = std_logic_vector(to_unsigned(0,symshift_count'length)) else '0';
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or ps2_matrix_reset = '1' then
+            symshift_count <= (others => '0');
+         elsif ps2_key_valid = '1' and ps2_keymap_data(7) = '1' then
+            if ps2_key_release = '0' then
+               symshift_count <= symshift_count + 1;
+            elsif symshift_count_zero = '0' then
+               symshift_count <= symshift_count - 1;
+            end if;
+         end if;
+      end if;
+   end process;
+
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or ps2_matrix_reset = '1' then
+            matrix_state <= ((others => (others => '1')));
+         elsif ps2_key_valid = '1' and ps2_keymap_data(2 downto 0) /= "111" then
+            matrix_state(to_integer(unsigned(ps2_keymap_data(5 downto 3))))(to_integer(unsigned(ps2_keymap_data(2 downto 0)))) <= ps2_key_release;
+         end if;
+      end if;
+   end process;
+   
+   -- membrane scan
+   
+   row_0_n <= '0' when i_membrane_row = "000" else '1';
+   row_7_n <= '0' when i_membrane_row = "111" else '1';
+   
+   o_membrane_col <= (matrix_state(to_integer(unsigned(i_membrane_row)))(6 downto 2)) & 
+                     (matrix_state(to_integer(unsigned(i_membrane_row)))(1) and (row_7_n or symshift_count_zero)) & 
+                     (matrix_state(to_integer(unsigned(i_membrane_row)))(0) and (row_0_n or capshift_count_zero));
+
+   -- ps2 function keys
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or ps2_matrix_reset = '1' then
+            o_ps2_func_keys_n <= (others => '1');
+         elsif ps2_fk_valid = '1' then
+            o_ps2_func_keys_n(to_integer(unsigned(ps2_keymap_data(2 downto 0)))) <= ps2_key_release;
+         end if;
+      end if;
+   end process;
+
+   -- ps2 keymap
+
+   keymap: entity work.keymaps
+   port map
+   (
+      clock_i     => i_CLK_n,
+      addr_wr_i   => i_keymap_addr,
+      data_i      => '0' & i_keymap_data,
+      we_i        => i_keymap_we,
+      --
+      addr_rd_i   => ps2_key_extend & ps2_receive_data,
+      data_o      => ps2_keymap_data
    );
 
-   -- PS/2 interface
+   ps2_current_keycode <= ps2_key_release & ps2_key_extend & ps2_receive_data;
 
-
-      ps2_alt0 : entity work.ps2_iobase
-      generic map (
-         clkfreq_g      => CLK_KHZ
-      )
-      port map (
-         clock_i        => clock_ps2_i,
-         reset_i        => reset_i,
-         enable_i       => enable_i,
-         ps2_clk_i      => ps2_clk_i, 
-         ps2_data_i     => ps2_data_i, 
-         ps2_clk_o      => ps2_clk_o, 
-         ps2_data_o     => ps2_data_o, 
-         ps2_data_out   => ps2_data_out, 
-         ps2_clk_out    => ps2_clk_out, 
-         data_rdy_i     => data_send_rdy_s,
-         data_i         => data_send_s,
-         send_rdy_o     => open,
-         data_rdy_o     => ps2_valid_s, --ps2_alt0_valid_s
-         data_o         => ps2_data_s, --ps2_alt0_data_s
-         sigsending_o   => open   -- ps2_sigsend_s
-      );
-
-   -- Function Keys
-   functionkeys_o <= fnkeys_s;
-
-   -- Matrix
-   k1_s <= matrix_q(0) when rows_i(0) = '0' else (others => '1');
-   k2_s <= matrix_q(1) when rows_i(1) = '0' else (others => '1');
-   k3_s <= matrix_q(2) when rows_i(2) = '0' else (others => '1');
-   k4_s <= matrix_q(3) when rows_i(3) = '0' else (others => '1');
-   k5_s <= matrix_q(4) when rows_i(4) = '0' else (others => '1');
-   k6_s <= matrix_q(5) when rows_i(5) = '0' else (others => '1');
-   k7_s <= matrix_q(6) when rows_i(6) = '0' else (others => '1');
-   k8_s <= matrix_q(7) when rows_i(7) = '0' else (others => '1');
-   cols_o <= k1_s and k2_s and k3_s and k4_s and k5_s and k6_s and k7_s and k8_s;
-
-   -- Key decode
-   process(reset_i, clock_i)
-      type keymap_seq_t is (KM_IDLE, KM_READ, KM_SEND, KM_END);
-      variable keymap_seq_s      : keymap_seq_t;
-      variable keyb_valid_edge_v : std_logic_vector(1 downto 0)   := "00";
-      variable row_v : integer range 0 to 7;
-      variable col_v : integer range 0 to 7;
-      variable caps_v : std_logic;
-      variable symb_v : std_logic;
+   process (i_CLK)
    begin
-      if rising_edge(clock_i) then
-         if reset_i = '1' then
-            keymap_seq_s      := KM_IDLE;
-            keyb_valid_edge_v := "00";
-            release_s         <= '0';
-            extended_s        <= '0';
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or ps2_matrix_reset = '1' then
+            ps2_last_keycode <= (others => '1');
+         elsif ps2_code_valid = '1' then
+            ps2_last_keycode <= ps2_current_keycode;   -- eliminate typematic
+         end if;
+      end if;
+   end process;
 
-            matrix_q(0) <= (others => '1');
-            matrix_q(1) <= (others => '1');
-            matrix_q(2) <= (others => '1');
-            matrix_q(3) <= (others => '1');
-            matrix_q(4) <= (others => '1');
-            matrix_q(5) <= (others => '1');
-            matrix_q(6) <= (others => '1');
-            matrix_q(7) <= (others => '1');
+   ps2_code_valid <= '1' when (state = KM_READ) and ((ps2_last_keycode /= ps2_current_keycode) or ps2_key_release = '1') else '0';
+   
+   ps2_key_valid <= '1' when ps2_code_valid = '1' and ps2_keymap_data(7 downto 6) /= "11" else '0';
+   ps2_fk_valid <= '1' when ps2_code_valid = '1' and ps2_keymap_data(7 downto 6) = "11" else '0';
 
-            fnkeys_s <= (others => '0');
-            alt_s    <= '1';
-            ctrl_s   <= '1';
+   ps2_matrix_reset <= (ps2_key_valid and ps2_data_e1) or ps2_send_valid;
+   
+   -- ps2 interface
+   
+   -- The reset may not be seen inside this module because it operates on a much slower clock.
+   -- The module needs to be rewritten and replaced, possibly merging keyboard and mouse.
+   
+   ps2_alt0: entity work.ps2_iobase
+   generic map (
+      clkfreq_g      => CLK_KHZ
+   )
+   port map (
+      clock_i        => i_CLK_PS2,
+      reset_i        => i_reset,
+      enable_i       => '1',
+      ps2_clk_i      => i_ps2_clk_in, 
+      ps2_data_i     => i_ps2_data_in, 
+      ps2_clk_o      => o_ps2_clk_out, 
+      ps2_data_o     => o_ps2_data_out, 
+      ps2_data_out   => o_ps2_data_out_en, 
+      ps2_clk_out    => o_ps2_clk_out_en, 
+      data_rdy_i     => ps2_send_valid,
+      data_i         => X"F8",
+      send_rdy_o     => open,
+      data_rdy_o     => ps2_receive_valid,
+      data_o         => ps2_receive_data,
+      sigsending_o   => open
+   );
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or (clk_ps2_re = '1' and ps2_send_valid = '1') then
+            ps2_send_valid <= '0';
+         elsif ps2_receive_valid_re = '1' and ps2_data_aa = '1' then
+            ps2_send_valid <= '1';
+         end if;
+      end if;
+   end process;
 
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            clk_ps2_d <= '1';
          else
+            clk_ps2_d <= i_CLK_PS2;
+         end if;
+      end if;
+   end process;
+    
+   clk_ps2_re <= i_CLK_PS2 and not clk_ps2_d;
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            ps2_receive_valid_d <= '0';
+         else
+            ps2_receive_valid_d <= ps2_receive_valid;
+         end if;
+      end if;
+   end process;
+   
+   ps2_receive_valid_re <= ps2_receive_valid and not ps2_receive_valid_d;
 
-            core_reload_o <= '0';
-            data_send_rdy_s   <= '0';
+   process (ps2_receive_data)
+   begin
+      ps2_data_01 <= '0';
+      ps2_data_09 <= '0';
+      ps2_data_1f <= '0';
+      ps2_data_27 <= '0';
+      ps2_data_aa <= '0';
+      ps2_data_e0 <= '0';
+      ps2_data_e1 <= '0';
+      ps2_data_f0 <= '0';
+      case ps2_receive_data is
+         when X"01" => ps2_data_01 <= '1';
+         when X"09" => ps2_data_09 <= '1';
+         when X"1F" => ps2_data_1f <= '1';
+         when X"27" => ps2_data_27 <= '1';
+         when X"AA" => ps2_data_aa <= '1';
+         when X"E0" => ps2_data_e0 <= '1';
+         when X"E1" => ps2_data_e1 <= '1';
+         when X"F0" => ps2_data_f0 <= '1';
+         when others => null;
+      end case;
+   end process;
 
-            keyb_valid_edge_v := keyb_valid_edge_v(0) & ps2_valid_s;
-         
-            case keymap_seq_s is
-               --
-               when KM_IDLE =>
-                  if keyb_valid_edge_v = "01" then
-                     if ps2_data_s = X"AA" then
-                        keymap_seq_s := KM_SEND;
-                     elsif ps2_data_s = X"E0" then       -- Extended key code follows
-                        extended_s <= '1';
-                     elsif ps2_data_s = X"F0" then       -- Release code follows
-                        release_s <= '1';
-                     else
-                        keymap_seq_s := KM_READ;
-                     end if;
-                  end if;
-               --
-               when KM_READ =>
-                  keymap_addr_s <= extended_s & ps2_data_s;
-                  if extended_s = '0' then
-                     if ps2_data_s = X"11" then          -- LALT
-                        alt_s <= release_s;
-                     elsif ps2_data_s = X"14" then       -- LCTRL
-                        ctrl_s <= release_s;
-                     elsif ps2_data_s = X"66" then       -- Backspace
-                        if alt_s = '0' and ctrl_s = '0' then
-                           core_reload_o <= '1';
-                        end if;
-                     elsif ps2_data_s = X"05" then       -- F1
-                        fnkeys_s(1) <= not release_s;
-                     elsif ps2_data_s = X"06" then       -- F2
-                        fnkeys_s(2) <= not release_s;
-                     elsif ps2_data_s = X"04" then       -- F3
-                        fnkeys_s(3) <= not release_s;
-                     elsif ps2_data_s = X"0C" then       -- F4
-                        fnkeys_s(4) <= not release_s;
-                     elsif ps2_data_s = X"03" then       -- F5
-                        fnkeys_s(5) <= not release_s;
-                     elsif ps2_data_s = X"0B" then       -- F6
-                        fnkeys_s(6) <= not release_s;
-                     elsif ps2_data_s = X"83" then       -- F7
-                        fnkeys_s(7) <= not release_s;
-                     elsif ps2_data_s = X"0A" then       -- F8
-                        fnkeys_s(8) <= not release_s;
-                     elsif ps2_data_s = X"01" then       -- F9
-                        fnkeys_s(9) <= not release_s;
-                     elsif ps2_data_s = X"09" then       -- F10
-                        fnkeys_s(10) <= not release_s;
-                     elsif ps2_data_s = X"78" then       -- F11
-                        fnkeys_s(11) <= not release_s;
-                     elsif ps2_data_s = X"07" then       -- F12
-                        fnkeys_s(12) <= not release_s;
-                     end if;
-                  else
-                     -- Extended
-                     if ps2_data_s = X"11" then          -- RALT
-                        alt_s <= release_s;
-                     elsif ps2_data_s = X"14" then       -- RCTRL
-                        ctrl_s <= release_s;
-                     end if;
-                  end if;
-                  keymap_seq_s := KM_END;
-               --
-               when KM_SEND =>
-                  data_send_s       <= X"55";
-                  data_send_rdy_s   <= '1';
-                  keymap_seq_s := KM_IDLE;
-               --
-               when KM_END =>
-                  -- Cancel extended/release flags for next time
-                  release_s  <= '0';
-                  extended_s <= '0';
-                  col_v := to_integer(unsigned(keymap_data_s(2 downto 0)));
-                  row_v := to_integer(unsigned(keymap_data_s(5 downto 3)));
-                  caps_v := keymap_data_s(6);
-                  symb_v := keymap_data_s(7);
-                  if col_v < 5 then
-                     matrix_q(row_v)(col_v) <= release_s;
-                  end if;
-                  if caps_v = '1' then
-                     matrix_q(0)(0) <= release_s;
-                  end if;
-                  if symb_v = '1' then
-                     matrix_q(7)(1) <= release_s;
-                  end if;
+   -- ps2 state machine
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            state <= KM_IDLE;
+         else
+            state <= state_next;
+         end if;
+      end if;
+   end process;
+   
+   process (state, ps2_receive_valid_re, ps2_data_aa, ps2_data_e0, ps2_data_f0)
+   begin
+      case state is
+         when KM_IDLE =>
+            if ps2_receive_valid_re = '1' then
+               if ps2_data_aa = '1' then
+                  state_next <= KM_END;
+               elsif ps2_data_e0 = '1' or ps2_data_f0 = '1' then
+                  state_next <= KM_IDLE;
+               else
+                  state_next <= KM_READ;
+               end if;
+            else
+               state_next <= KM_IDLE;
+            end if;
+         when KM_READ =>
+            state_next <= KM_END;
+         when KM_END =>
+            state_next <= KM_IDLE;
+         when others =>
+            state_next <= KM_IDLE;
+      end case;
+   end process;
 
-                  keymap_seq_s := KM_IDLE;
-            end case;
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or state = KM_END then
+            ps2_key_extend <= '0';
+         elsif ps2_receive_valid_re = '1' and ps2_data_e0 = '1' then
+            ps2_key_extend <= '1';
+         end if;
+      end if;
+   end process;
+   
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' or state = KM_END then
+            ps2_key_release <= '0';
+         elsif ps2_receive_valid_re = '1' and ps2_data_f0 = '1' then
+            ps2_key_release <= '1';
          end if;
       end if;
    end process;

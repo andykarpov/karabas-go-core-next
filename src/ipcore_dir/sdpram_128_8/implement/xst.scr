@@ -2,7 +2,7 @@
 run
 -ifmt VHDL
 -ent sdpram_128_8_exdes 
--p xc6slx25-ftg256-2
+-p xc6slx16-ftg256-2
 -ifn xst.prj
 -write_timing_constraints No
 -iobuf YES

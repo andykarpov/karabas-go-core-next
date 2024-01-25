@@ -66,7 +66,7 @@ cp ../example_design/spram_320_9_exdes.ucf results/
 cd results
 
 echo 'Running ngdbuild'
-ngdbuild -p xc6slx25-ftg256-2 -sd ../../../ spram_320_9_exdes
+ngdbuild -p xc6slx16-ftg256-2 -sd ../../../ spram_320_9_exdes
 
 echo 'Running map'
 map spram_320_9_exdes -o mapped.ncd

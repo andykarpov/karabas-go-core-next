@@ -1,6 +1,6 @@
 
 -- ZX Spectrum Next Implementation
--- Copyright 2020 Alvin Albrecht, Victor Trucco and Fabio Belavenuto
+-- Copyright 2020-2022 Alvin Albrecht, Victor Trucco and Fabio Belavenuto
 --
 -- TBBlue - Victor Trucco & Fabio Belavenuto
 -- ZXNext Refactor - Alvin Albrecht
@@ -32,12 +32,14 @@ entity zxnext is
    generic
    (
       g_machine_id         : unsigned(7 downto 0);
+      g_video_def          : unsigned(2 downto 0);
       g_version            : unsigned(7 downto 0);
-      g_sub_version        : unsigned(7 downto 0)
+      g_sub_version        : unsigned(7 downto 0);
+      g_board_issue        : unsigned(3 downto 0);
+      g_video_inc          : unsigned(1 downto 0)
    );
-   port (
-      -- CLOCK
-      
+   port
+   (
       i_CLK_28             : in std_logic;      -- 28MHz for machine logic
       i_CLK_28_n           : in std_logic;      -- 28MHz inverted
       i_CLK_14             : in std_logic;      -- 14MHz hi-res pixel clock
@@ -51,8 +53,7 @@ entity zxnext is
       
       -- RESET
 
-      i_RESET_HARD         : in std_logic;      -- reboot in config mode, duration counted in top module
-      i_RESET_SOFT         : in std_logic;      -- reset current system, duration counted in top module
+      i_RESET              : in std_logic;      -- asserted for some number of cycles
       
       o_RESET_SOFT         : out std_logic;     -- asserted for one cycle at 28MHz
       o_RESET_HARD         : out std_logic;     -- asserted for one cycle at 28MHz
@@ -80,17 +81,20 @@ entity zxnext is
       -- PS/2 KEYBOARD SETUP
       
       o_KEYMAP_ADDR        : out std_logic_vector(8 downto 0);    -- keymap address
-      o_KEYMAP_DATA        : out std_logic_vector(8 downto 0);    -- keymap data
-      o_KEYMAP_WE          : out std_logic;                       -- write signal
+      o_KEYMAP_DATA        : out std_logic_vector(7 downto 0);    -- keymap data
+      o_KEYMAP_WE          : out std_logic;                       -- write signal to ps2 keyboard
+      o_JOYMAP_WE          : out std_logic;                       -- write signal to key joystick
       
       -- JOYSTICK
       
-      i_JOY_LEFT           : in std_logic_vector(10 downto 0);    -- active high  X Z Y START A C B U D L R
-      i_JOY_RIGHT          : in std_logic_vector(10 downto 0);    -- active high  X Z Y START A C B U D L R
+      i_JOY_LEFT           : in std_logic_vector(11 downto 0);    -- active high  MODE X Z Y START A C B U D L R
+      i_JOY_RIGHT          : in std_logic_vector(11 downto 0);    -- active high  MODE X Z Y START A C B U D L R
       
-      o_JOY_IO_MODE        : out std_logic_vector(1 downto 0);    -- x1 = io mode enabled, 1x = clock io mode selected
-      o_JOY_IO_MODE_LR     : out std_logic;
-      o_JOY_IO_MODE_PIN_7  : out std_logic;                       -- state of pin 7 if in io mode direct or clock speed if in io mode clock
+      o_JOY_IO_MODE_EN     : out std_logic;                       -- joystick io mode enabled
+      o_JOY_IO_MODE_PIN_7  : out std_logic;                       -- state of pin 7 if in joystick io mode
+
+      o_JOY_LEFT_TYPE      : out std_logic_vector(2 downto 0);
+      o_JOY_RIGHT_TYPE     : out std_logic_vector(2 downto 0);
       
       -- MOUSE
       
@@ -116,16 +120,18 @@ entity zxnext is
       o_SPI_SS_SD1_n       : out std_logic;
       o_SPI_SS_SD0_n       : out std_logic;
 
-      o_SPI_SCK            : out std_logic;
-      o_SPI_MOSI           : out std_logic;
+      o_SPI_SCK            : out std_logic;     -- must synchronize on rising edge of i_CLK_CPU
+      o_SPI_MOSI           : out std_logic;     -- must synchronize on rising edge of i_CLK_CPU
       
-      i_SPI_SD_MISO        : in std_logic;
-      i_SPI_FLASH_MISO     : in std_logic;
+      i_SPI_SD_MISO        : in std_logic;      -- must synchronize on rising edge of i_CLK_CPU
+      i_SPI_FLASH_MISO     : in std_logic;      -- must synchronize on rising edge of i_CLK_CPU
       
       -- UART
       
       i_UART0_RX           : in std_logic;
       o_UART0_TX           : out std_logic;
+      i_UART0_CTS_n        : in std_logic;
+      o_UART0_RTR_n        : out std_logic;
       
       -- VIDEO
       -- synchronized to i_CLK_14
@@ -134,8 +140,7 @@ entity zxnext is
       o_RGB_CS_n           : out std_logic;                       -- csync
       o_RGB_VS_n           : out std_logic;                       -- vsync
       o_RGB_HS_n           : out std_logic;                       -- hsync
-      o_RGB_VB_n           : out std_logic;                       -- vblank
-      o_RGB_HB_n           : out std_logic;                       -- hblank
+      o_RGB_BK_n           : out std_logic;                       -- blank
       
       o_VIDEO_50_60        : out std_logic;                       -- 0 = 50Hz, 1 = 60Hz
       o_VIDEO_SCANLINES    : out std_logic_vector(1 downto 0);    -- 
@@ -145,19 +150,19 @@ entity zxnext is
       o_MACHINE_TIMING     : out std_logic_vector(2 downto 0);    -- machine timing: 00X = 48k, 010 = 128k, 011 = +3, 100 = pentagon
       
       o_HDMI_RESET         : out std_logic;
+      o_HDMI_PIXEL         : out std_logic;                       -- pixel available
+      o_HDMI_LOCK          : out std_logic;                       -- frame lock
       
       -- AUDIO
       
       o_AUDIO_HDMI_AUDIO_EN : out std_logic;
 
       o_AUDIO_SPEAKER_EN   : out std_logic;     -- enable internal speaker
-      o_AUDIO_SPEAKER_BEEP : out std_logic;     -- only beep to internal speaker
+      o_AUDIO_SPEAKER_EXCL : out std_logic;     -- only beeps go to speaker
       
-      i_AUDIO_EAR          : in std_logic;      -- tape in
-      o_AUDIO_MIC          : out std_logic;     -- tape out
-      
-      o_AUDIO_SPEAKER_EAR  : out std_logic;
-      o_AUDIO_SPEAKER_MIC  : out std_logic;
+      i_AUDIO_EAR          : in std_logic;      -- tape input
+      o_AUDIO_MIC          : out std_logic;     -- tape output
+      o_AUDIO_EAR          : out std_logic;     -- beep output
 
       o_AUDIO_L            : out std_logic_vector(12 downto 0);   -- pcm audio
       o_AUDIO_R            : out std_logic_vector(12 downto 0);   -- pcm audio
@@ -169,7 +174,7 @@ entity zxnext is
       
       o_RAM_A_ADDR         : out std_logic_vector(20 downto 0);   -- 2MB memory space
       o_RAM_A_REQ          : out std_logic;                       -- '1' indicates memory request on next rising edge
-      o_RAM_A_RD           : out std_logic;                       -- '1' for read, '0' for write
+      o_RAM_A_RD_n         : out std_logic;                       -- '0' for read, '1' for write
       i_RAM_A_DI           : in std_logic_vector(7 downto 0);     -- data read from memory
       o_RAM_A_DO           : out std_logic_vector(7 downto 0);    -- data written to memory
       
@@ -197,6 +202,7 @@ entity zxnext is
       o_BUS_BUSAK_n        : out std_logic;
       o_BUS_HALT_n         : out std_logic;
       o_BUS_RFSH_n         : out std_logic;
+      o_BUS_IEO            : out std_logic;
       
       i_BUS_ROMCS_n        : in std_logic;                        -- 1 disables internal rom
 --    i_BUS_RAMCS_n        : in std_logic;
@@ -219,7 +225,29 @@ entity zxnext is
       i_GPIO               : in std_logic_vector(27 downto 0);
       
       o_GPIO               : out std_logic_vector(27 downto 0);
-      o_GPIO_EN            : out std_logic_vector(27 downto 0)    -- 0 = high Z
+      o_GPIO_EN            : out std_logic_vector(27 downto 0);   -- 0 = high Z
+
+      -- XILINX PERIPHERALS
+      
+      o_XDNA_LOAD          : out std_logic;
+      o_XDNA_SHIFT         : out std_logic;
+      i_XDNA_DO            : in std_logic;
+      
+      o_XADC_RESET         : out std_logic;
+      
+      o_XADC_DEN           : out std_logic;
+      o_XADC_DADDR         : out std_logic_vector(6 downto 0);
+      o_XADC_DWE           : out std_logic;
+      i_XADC_DRDY          : in std_logic;
+      o_XADC_DI            : out std_logic_vector(15 downto 0);
+      i_XADC_DO            : in std_logic_vector(15 downto 0);
+      
+      i_XADC_BUSY          : in std_logic;
+      i_XADC_EOC           : in std_logic;
+      i_XADC_EOS           : in std_logic;
+      o_XADC_CONVST        : out std_logic;
+
+      o_XADC_CONTROL       : out std_logic
    );
 end entity;
 
@@ -228,10 +256,10 @@ architecture rtl of zxnext is
    -- RESET
    
    signal reset                  : std_logic;
-   signal reset_soft             : std_logic;
-   signal reset_hard             : std_logic;
    
    -- Z80 & DMA
+   
+   signal expbus_disable_int     : std_logic;
    
    signal z80_wait_n             : std_logic;
    signal z80_int_n              : std_logic;
@@ -276,22 +304,45 @@ architecture rtl of zxnext is
    signal cpu_di                 : std_logic_vector(7 downto 0);
    signal cpu_do                 : std_logic_vector(7 downto 0);
    
-   signal cpu_di_mem             : std_logic_vector(7 downto 0);
-   signal cpu_di_io              : std_logic_vector(7 downto 0);
+   signal im2_ieo                : std_logic;
+   signal im2_reti_decode        : std_logic;
+   signal z80_im_mode            : std_logic_vector(1 downto 0);
+   signal z80_reti_seen_t3       : std_logic;
+   signal z80_retn_seen_t3       : std_logic;
+   signal z80_retn_seen_28       : std_logic;
+   signal z80_retn_seen_28_d     : std_logic;
+   signal dma_delay              : std_logic;
+   signal im2_dma_delay          : std_logic;
+   
+   signal im2_int_req            : std_logic_vector(13 downto 0);
+   signal im2_int_unq            : std_logic_vector(13 downto 0);
+   signal im2_int_en             : std_logic_vector(13 downto 0);
+   signal im2_status_clear       : std_logic_vector(13 downto 0);
+   signal im2_dma_int_en         : std_logic_vector(13 downto 0);
+   signal im2_int_status         : std_logic_vector(13 downto 0);
+   signal im2_int_n              : std_logic;
+   signal pulse_int_en           : std_logic;
+   signal im2_dma_int            : std_logic;
+   signal im2_vec                : std_logic_vector(3 downto 0);
+   signal im2_vector             : std_logic_vector(7 downto 0);
+   
+   signal z80_stackless_nmi      : std_logic;
+   signal z80_retn_address       : std_logic_vector(7 downto 0);
+   signal z80_stackless_retn_en  : std_logic;
    
    signal nmi_activated          : std_logic;
-   signal nmi_expbus_en          : std_logic;
+   signal nmi_assert_mf          : std_logic;
+   signal nmi_assert_divmmc      : std_logic;
    signal nmi_assert_expbus      : std_logic;
    signal nmi_mf                 : std_logic := '0';
    signal nmi_divmmc             : std_logic := '0';
    signal nmi_expbus             : std_logic := '0';
    signal nmi_hold               : std_logic;
+   signal nmi_accept_cause       : std_logic;
    
-   type   nmi_state_t            is (S_NMI_IDLE, S_NMI_ASSERT, S_NMI_OPUS, S_NMI_HOLD, S_NMI_END);
+   type   nmi_state_t            is (S_NMI_IDLE, S_NMI_FETCH, S_NMI_HOLD, S_NMI_END);
    signal nmi_state              : nmi_state_t := S_NMI_IDLE;
    signal nmi_state_next         : nmi_state_t;
-   signal nmi_holding            : std_logic;
-   signal nmi_opus               : std_logic;
    signal nmi_generate_n         : std_logic;
    signal nmi_mf_button          : std_logic;
    signal nmi_divmmc_button      : std_logic;
@@ -373,7 +424,12 @@ architecture rtl of zxnext is
    signal gpio_14                : std_logic;
    signal gpio_15_en             : std_logic;
    signal gpio_15                : std_logic;
+   signal gpio_16_en             : std_logic;
+   signal gpio_16                : std_logic;
+   signal gpio_17_en             : std_logic;
+   signal gpio_17                : std_logic;
    signal pi_uart_rx             : std_logic;
+   signal pi_uart_cts_n          : std_logic;
    
    signal gpio_18_en             : std_logic;
    signal gpio_18                : std_logic;
@@ -431,6 +487,7 @@ architecture rtl of zxnext is
    signal dac_hw_en              : std_logic;
    
    signal bus_iorq_ula           : std_logic := '0';
+   signal bus_iorq_ula_q         : std_logic;
 
    signal port_00xx_msb          : std_logic;
    signal port_04xx_msb          : std_logic;
@@ -438,20 +495,14 @@ architecture rtl of zxnext is
    signal port_10xx_msb          : std_logic;
    signal port_11xx_msb          : std_logic;
    signal port_12xx_msb          : std_logic;
-   signal port_13xx_msb          : std_logic;
-   signal port_14xx_msb          : std_logic;
-   signal port_15xx_msb          : std_logic;
    signal port_1fxx_msb          : std_logic;
    signal port_24xx_msb          : std_logic;
    signal port_25xx_msb          : std_logic;
    signal port_30xx_msb          : std_logic;
    signal port_3dxx_msb          : std_logic;
-   signal port_7fxx_msb          : std_logic;
    signal port_bfxx_msb          : std_logic;
-   signal port_fexx_msb          : std_logic;
    signal port_ffxx_msb          : std_logic;
 
-   signal port_00_lsb            : std_logic;
    signal port_08_lsb            : std_logic;
    signal port_0b_lsb            : std_logic;
    signal port_0f_lsb            : std_logic;
@@ -466,9 +517,11 @@ architecture rtl of zxnext is
    signal port_5f_lsb            : std_logic;
    signal port_62_lsb            : std_logic;
    signal port_66_lsb            : std_logic;
+   signal port_6a_lsb            : std_logic;
    signal port_6b_lsb            : std_logic;
    signal port_b3_lsb            : std_logic;
    signal port_c6_lsb            : std_logic;
+   signal port_d7_lsb            : std_logic;
    signal port_df_lsb            : std_logic;
    signal port_e3_lsb            : std_logic;
    signal port_e7_lsb            : std_logic;
@@ -488,11 +541,14 @@ architecture rtl of zxnext is
 -- signal port_p3_float_active   : std_logic;
    signal port_7ffd              : std_logic;
    signal port_7ffd_active       : std_logic;
-   signal port_7ffd_assert       : std_logic;
+-- signal port_7ffd_assert       : std_logic;
    signal port_dffd              : std_logic;
+   signal port_xffd              : std_logic;
    signal port_1ffd              : std_logic;
+   signal port_2ffd              : std_logic;
+   signal port_3ffd              : std_logic;
 -- signal port_1ffd_active       : std_logic;
-   signal port_1ffd_assert       : std_logic;
+-- signal port_1ffd_assert       : std_logic;
    signal port_eff7              : std_logic;
    signal port_e3                : std_logic;
    signal port_mf_enable_io_a    : std_logic_vector(7 downto 0);
@@ -506,12 +562,11 @@ architecture rtl of zxnext is
    signal port_103b              : std_logic;
    signal port_113b              : std_logic;
    signal port_123b              : std_logic;
-   signal port_133b              : std_logic;
-   signal port_143b              : std_logic;
-   signal port_153b              : std_logic;
+   signal port_uart              : std_logic;
    signal port_dma               : std_logic;
    signal port_fffd              : std_logic;
    signal port_bffd              : std_logic;
+   signal port_bff5              : std_logic;
    signal port_dac_mono_AD       : std_logic;
    signal port_dac_mono_BC       : std_logic;
    signal port_dac_A             : std_logic;
@@ -544,6 +599,9 @@ architecture rtl of zxnext is
    signal port_7ffd_wr           : std_logic;
    signal port_dffd_wr           : std_logic;
    signal port_1ffd_wr           : std_logic;
+   signal port_2ffd_rd           : std_logic;
+   signal port_3ffd_rd           : std_logic;
+   signal port_3ffd_wr           : std_logic;
    signal port_eff7_wr           : std_logic;
    signal port_e3_rd             : std_logic;
    signal port_e3_wr             : std_logic;
@@ -557,6 +615,8 @@ architecture rtl of zxnext is
    signal port_243b_rd           : std_logic;
    signal port_243b_wr           : std_logic;
    signal port_253b_rd           : std_logic;
+   signal port_253b_rd_qq        : std_logic_vector(1 downto 0) := "00";
+   signal port_253b_rd_fe        : std_logic;
    signal port_253b_wr           : std_logic;
    signal port_103b_rd           : std_logic;
    signal port_103b_wr           : std_logic;
@@ -564,12 +624,8 @@ architecture rtl of zxnext is
    signal port_113b_wr           : std_logic;
    signal port_123b_rd           : std_logic;
    signal port_123b_wr           : std_logic;
-   signal port_133b_rd           : std_logic;
-   signal port_133b_wr           : std_logic;
-   signal port_143b_rd           : std_logic;
-   signal port_143b_wr           : std_logic;
-   signal port_153b_rd           : std_logic;
-   signal port_153b_wr           : std_logic;
+   signal port_uart_rd           : std_logic;
+   signal port_uart_wr           : std_logic;
    signal port_dma_rd            : std_logic;
    signal port_dma_wr            : std_logic;
    signal port_fffd_rd           : std_logic;
@@ -584,7 +640,6 @@ architecture rtl of zxnext is
    signal port_ffdf_rd           : std_logic;
    signal port_1f_rd             : std_logic;
    signal port_37_rd             : std_logic;
-   signal port_37_wr             : std_logic;
    signal port_57_wr             : std_logic;
    signal port_5b_wr             : std_logic;
    signal port_303b_rd           : std_logic;
@@ -608,9 +663,7 @@ architecture rtl of zxnext is
    signal port_103b_rd_dat       : std_logic_vector(7 downto 0);
    signal port_113b_rd_dat       : std_logic_vector(7 downto 0);
    signal port_123b_rd_dat       : std_logic_vector(7 downto 0);
-   signal port_133b_rd_dat       : std_logic_vector(7 downto 0);
-   signal port_143b_rd_dat       : std_logic_vector(7 downto 0);
-   signal port_153b_rd_dat       : std_logic_vector(7 downto 0);
+   signal port_uart_rd_dat       : std_logic_vector(7 downto 0);
    signal port_dma_rd_dat        : std_logic_vector(7 downto 0);
    signal port_fffd_rd_dat       : std_logic_vector(7 downto 0);
    signal port_fadf_rd_dat       : std_logic_vector(7 downto 0);
@@ -626,75 +679,93 @@ architecture rtl of zxnext is
 
    -- MEMORY ADDRESSES
 
-   signal divmmc_automap_en_instant             : std_logic;
-   signal divmmc_automap_en_delayed             : std_logic;
-   signal divmmc_automap_en_delayed_nohide      : std_logic;
-   signal divmmc_automap_en_delayed_nohide_nmi  : std_logic;
-   signal divmmc_automap_dis_delayed            : std_logic;
+   signal divmmc_rst_ep          : std_logic;
+   signal divmmc_rst_ep_valid    : std_logic;
+   signal divmmc_rst_ep_timing   : std_logic;
+
+   signal divmmc_automap_instant_on             : std_logic;
+   signal divmmc_automap_delayed_on             : std_logic;
+   signal divmmc_automap_delayed_off            : std_logic;
+   signal divmmc_automap_rom3_instant_on        : std_logic;
+   signal divmmc_automap_rom3_delayed_on        : std_logic;
+   signal divmmc_automap_nmi_instant_on         : std_logic;
+   signal divmmc_automap_nmi_delayed_on         : std_logic;
+
+   signal divmmc_automap_instant_on_q           : std_logic;
+   signal divmmc_automap_delayed_on_q           : std_logic;
+   signal divmmc_automap_delayed_off_q          : std_logic;
+   signal divmmc_automap_rom3_instant_on_q      : std_logic;
+   signal divmmc_automap_rom3_delayed_on_q      : std_logic;
+   signal divmmc_automap_nmi_instant_on_q       : std_logic;
+   signal divmmc_automap_nmi_delayed_on_q       : std_logic;
 
    signal mf_a_0066              : std_logic;
-   signal mf_a_1fxx              : std_logic;
-   signal mf_a_7fxx              : std_logic;
-   signal mf_a_fexx              : std_logic;
 
    -- MEMORY DECODING
    
    signal mem_active_page        : std_logic_vector(7 downto 0);
+   
+   signal mem_active_bank5       : std_logic;
+   signal mem_active_bank7       : std_logic;
+   
+   signal mmu_A21_A13            : std_logic_vector(8 downto 0);
    
    signal layer2_active_bank_offset_pre      : std_logic_vector(1 downto 0);
    signal layer2_active_bank_offset          : std_logic_vector(3 downto 0);
    signal layer2_active_bank     : std_logic_vector(6 downto 0);
    signal layer2_active_page     : std_logic_vector(8 downto 0);
    
-   signal sram_config_active     : std_logic;
-   
-   signal mmu_A21_A13            : std_logic_vector(8 downto 0);
    signal layer2_A21_A13         : std_logic_vector(8 downto 0);
    
-   signal mem_active_bank5       : std_logic;
-   signal mem_active_bank7       : std_logic;
-   signal sram_active_rom        : std_logic_vector(1 downto 0);
+   signal sram_rom               : std_logic_vector(1 downto 0);
    signal sram_rom3              : std_logic;
-   signal sram_alt_128           : std_logic;
-   signal eff_expbus_romcs_replace           : std_logic;
+   signal sram_alt_128_n         : std_logic;
    
-   signal layer2_pre_A21_A13     : std_logic_vector(8 downto 0);
-   signal sram_pre_active        : std_logic;
+   signal sram_pre_romcs_n       : std_logic;
+   signal sram_pre_romcs_replace : std_logic;
+   signal sram_pre_alt_en        : std_logic;
+   signal sram_pre_alt_128_n     : std_logic;
    signal sram_pre_rom3          : std_logic;
+   signal sram_pre_layer2_rd_en  : std_logic;
+   signal sram_pre_layer2_wr_en  : std_logic;
+   signal sram_pre_layer2_A21_A13: std_logic_vector(8 downto 0);
+   
+   signal sram_pre_A20_A13       : std_logic_vector(7 downto 0);
+   signal sram_pre_active        : std_logic;
    signal sram_pre_bank5         : std_logic;
    signal sram_pre_bank7         : std_logic;
    signal sram_pre_rdonly        : std_logic;
-   signal sram_pre_romcs         : std_logic;
-   signal sram_pre_alt_en        : std_logic;
-   signal sram_pre_alt_128       : std_logic;
-   signal port_123b_layer2_map_rd_pre        : std_logic;
-   signal port_123b_layer2_map_wr_pre        : std_logic;
-   signal port_123b_layer2_map_segment_pre   : std_logic_vector(1 downto 0);
-   signal sram_pre_A20_A13       : std_logic_vector(7 downto 0);
+   signal sram_pre_override      : std_logic_vector(2 downto 0);
    
-   signal layer2_map_en          : std_logic;
-   signal altrom_en              : std_logic;
+   signal sram_layer2_map_en     : std_logic;
+   signal sram_altrom_en         : std_logic;
+   
    signal sram_A20_A13           : std_logic_vector(7 downto 0);
    signal sram_active            : std_logic;
    signal sram_bank5             : std_logic;
    signal sram_bank7             : std_logic;
    signal sram_rdonly            : std_logic;
    signal sram_romcs_en          : std_logic;
-   signal sram_obscure_divmmc_automap        : std_logic;
-   signal sram_disable_divmmc_automap        : std_logic;
+   signal sram_mem_hide_n        : std_logic;
    
-   signal memcycle               : std_logic;
-   signal memcycle_delay         : std_logic_vector(3 downto 0);
-   signal memcycle_delay_end     : std_logic_vector(3 downto 0);
-   signal memcycle_delay_complete            : std_logic;
+   signal sram_divmmc_automap_en             : std_logic;
+   signal sram_divmmc_automap_rom3_en        : std_logic;
+   
+   signal sram_memcycle          : std_logic;
    signal sram_romcs             : std_logic;
+   
+   signal memcycle_complete      : std_logic;
+   signal memcycle_count         : std_logic_vector(2 downto 0);
+   signal memcycle_count_max     : std_logic_vector(2 downto 0);
+
    signal cpu_bank5_rd           : std_logic;
    signal cpu_bank5_we           : std_logic;
    signal cpu_bank7_we           : std_logic;
+   
    signal sram_addr              : std_logic_vector(20 downto 0);
-   signal sram_rd                : std_logic;
+   signal sram_rd_n              : std_logic;
    signal sram_req               : std_logic;
-   signal sram_req_dly           : std_logic;
+   signal sram_req_d             : std_logic := '1';
    signal sram_req_t             : std_logic;
    signal sram_wait_n            : std_logic := '1';
    
@@ -721,73 +792,37 @@ architecture rtl of zxnext is
    
    signal uart0_tx_esp           : std_logic;
    signal uart1_tx_pi            : std_logic;
+   signal esp_uart_rtr_n         : std_logic;
+   signal pi_uart_rtr_n          : std_logic;
    
-   signal uart0_tx_busy          : std_logic;
-   signal uart0_tx               : std_logic;
+   signal uart_do                : std_logic_vector(7 downto 0);
+   
+   signal uart0_hwflow_en        : std_logic;
    signal uart0_rx               : std_logic;
+   signal uart0_rx_rtr_n         : std_logic;
    signal uart0_rx_avail         : std_logic;
-   signal uart0_rx_byte          : std_logic_vector(7 downto 0);
+   signal uart0_rx_near_full     : std_logic;
+   signal uart0_tx               : std_logic;
+   signal uart0_tx_cts_n         : std_logic;
+   signal uart0_tx_empty         : std_logic;
    
-   signal uart0_fifo_empty       : std_logic;
-   signal uart0_fifo_full        : std_logic;
-   signal uart0_fifo_raddr       : std_logic_vector(8 downto 0);
-   signal uart0_fifo_waddr       : std_logic_vector(8 downto 0);
-
-   signal uart1_tx_busy          : std_logic;
-   signal uart1_tx               : std_logic;
+   signal uart1_hwflow_en        : std_logic;
    signal uart1_rx               : std_logic;
+   signal uart1_rx_rtr_n         : std_logic;
    signal uart1_rx_avail         : std_logic;
-   signal uart1_rx_byte          : std_logic_vector(7 downto 0);
+   signal uart1_rx_near_full     : std_logic;
+   signal uart1_tx               : std_logic;
+   signal uart1_tx_cts_n         : std_logic;
+   signal uart1_tx_empty         : std_logic;
    
-   signal uart1_fifo_empty       : std_logic;
-   signal uart1_fifo_full        : std_logic;
-   signal uart1_fifo_raddr       : std_logic_vector(8 downto 0);
-   signal uart1_fifo_waddr       : std_logic_vector(8 downto 0);
-   
-   signal uart0_143b_prescalar   : std_logic_vector(13 downto 0);
-   signal uart1_143b_prescalar   : std_logic_vector(13 downto 0);
-   signal uart_153b_select       : std_logic;
-   signal uart0_153b_prescalar_msb           : std_logic_vector(2 downto 0);
-   signal uart1_153b_prescalar_msb           : std_logic_vector(2 downto 0);
+-- signal joy_iomode_hwflen      : std_logic;
 
-   signal port_153b_dat          : std_logic_vector(7 downto 0);
-   signal port_133b_dat_20       : std_logic_vector(2 downto 0);
-   signal port_133b_dat          : std_logic_vector(7 downto 0);
-   
-   signal uart0_rx_o             : std_logic_vector(7 downto 0);
-   signal uart1_rx_o             : std_logic_vector(7 downto 0);
-   
-   signal uart0_rx_avail_dly     : std_logic;
-   signal uart0_rx_byte_dly      : std_logic_vector(7 downto 0);
-   signal uart0_fifo_addr        : std_logic_vector(8 downto 0);
-   signal uart0_fifo_we          : std_logic;
-   
-   signal uart1_rx_avail_dly     : std_logic;
-   signal uart1_rx_byte_dly      : std_logic_vector(7 downto 0);
-   signal uart1_fifo_addr        : std_logic_vector(8 downto 0);
-   signal uart1_fifo_we          : std_logic;
-   
-   signal port_143b_dat          : std_logic_vector(7 downto 0);
+   signal port_uart_dat          : std_logic_vector(7 downto 0);
    
    -- KEYBOARD, JOYSTICKS & MOUSE
    
    signal keyrow                 : std_logic_vector(7 downto 0);
-   
-   signal joyL_up                : std_logic;
-   signal joyR_up                : std_logic;
-   
-   signal joyL_sinc1             : std_logic_vector(4 downto 0);
-   signal joyL_sinc2             : std_logic_vector(4 downto 0);
-   signal joyL_cursA             : std_logic_vector(4 downto 0);
-   signal joyL_cursB             : std_logic_vector(4 downto 0);
-   
-   signal joyR_sinc1             : std_logic_vector(4 downto 0);
-   signal joyR_sinc2             : std_logic_vector(4 downto 0);
-   signal joyR_cursA             : std_logic_vector(4 downto 0);
-   signal joyR_cursB             : std_logic_vector(4 downto 0);
-   
-   signal joy_key                : std_logic_vector(4 downto 0);
-   
+
    signal port_fe_bus            : std_logic_vector(7 downto 0);
    signal port_fe_dat_0          : std_logic_vector(7 downto 0);
    signal port_fe_dat            : std_logic_vector(7 downto 0);
@@ -806,14 +841,10 @@ architecture rtl of zxnext is
    signal joyR_1f                : std_logic_vector(7 downto 0);
    signal joyR_37                : std_logic_vector(7 downto 0);
    
-   signal io_mode                : std_logic_vector(1 downto 0) := "00";
-   signal io_mode_en             : std_logic := '0';
-   signal io_mode_lr             : std_logic := '0';
-   signal io_mode_bit_0          : std_logic := '1';
-   signal io_mode_uart_en        : std_logic;
-   signal io_mode_uart_rx        : std_logic;
-   signal io_mode_uart_tx        : std_logic;
-   signal io_mode_pin_7          : std_logic;
+   signal joy_iomode_pin7        : std_logic := '1';
+   signal joy_iomode_uart_en     : std_logic;
+   signal joy_uart_rx            : std_logic;
+   signal joy_uart_cts_n         : std_logic;
    
    signal port_1f_dat            : std_logic_vector(7 downto 0);
    signal port_37_dat            : std_logic_vector(7 downto 0);
@@ -860,6 +891,14 @@ architecture rtl of zxnext is
    signal port_memory_ram_change_dly         : std_logic := '0';
    signal nr_8f_we_dly           : std_logic := '0';
    
+   signal nmi_cpu_02_we          : std_logic;
+   signal nmi_cu_02_we           : std_logic;
+   signal nmi_gen_nr_mf          : std_logic;
+   signal nmi_gen_nr_divmmc      : std_logic;
+   signal nmi_gen_iotrap         : std_logic;
+   signal nmi_sw_gen_mf          : std_logic;
+   signal nmi_sw_gen_divmmc      : std_logic;
+
    signal port_123b_dat          : std_logic_vector(7 downto 0) := (others => '0');
    signal port_123b_layer2_en    : std_logic;
    signal port_123b_layer2_map_wr_en         : std_logic;
@@ -881,8 +920,6 @@ architecture rtl of zxnext is
    signal port_ctc_dat           : std_logic_vector(7 downto 0);
    signal ctc_zc_to              : std_logic_vector(7 downto 0);
    signal ctc_int_en             : std_logic_vector(7 downto 0);
-   signal ctc_int                : std_logic_vector(7 downto 0);
-   signal ctc_int_n              : std_logic;
    
    signal divmmc_rom_en          : std_logic;
    signal divmmc_ram_en          : std_logic;
@@ -892,6 +929,8 @@ architecture rtl of zxnext is
    signal port_e3_dat            : std_logic_vector(7 downto 0);
    signal divmmc_nmi_hold        : std_logic;
    signal divmmc_automap_held    : std_logic;
+   signal divmmc_retn_seen       : std_logic;
+   signal divmmc_automap_reset   : std_logic;
    
    signal layer2_addr            : std_logic_vector(16 downto 0);
    signal layer2_pixel_en        : std_logic;
@@ -982,30 +1021,34 @@ architecture rtl of zxnext is
    signal MMU7                   : std_logic_vector(7 downto 0);
    
    signal copper_requester       : std_logic;
-   signal copper_req_dly         : std_logic;
+   signal copper_requester_d     : std_logic;
    signal copper_req             : std_logic;
    signal copper_nr_reg          : std_logic_vector(7 downto 0);
    signal copper_nr_dat          : std_logic_vector(7 downto 0);
    signal cpu_requester_0        : std_logic;
    signal cpu_requester_1        : std_logic;
    signal cpu_requester_2        : std_logic;
-   signal cpu_req_dly            : std_logic;
+   signal cpu_requester          : std_logic;
+   signal cpu_requester_d        : std_logic;
+   signal cpu_requester_reg      : std_logic_vector(7 downto 0);
+   signal cpu_requester_dat      : std_logic_vector(7 downto 0);
    signal cpu_req                : std_logic;
    signal cpu_nr_reg             : std_logic_vector(7 downto 0);
    signal cpu_nr_dat             : std_logic_vector(7 downto 0);
    signal nr_wr_en               : std_logic;
    signal nr_wr_reg              : std_logic_vector(7 downto 0);
    signal nr_wr_dat              : std_logic_vector(7 downto 0);
-   signal cpu_served             : std_logic;
    
    signal nr_02_we               : std_logic;
    signal nr_05_we               : std_logic;
    signal nr_07_we               : std_logic;
    signal nr_08_we               : std_logic;
    signal nr_09_we               : std_logic;
+   signal nr_10_we               : std_logic;
+   signal nr_20_we               : std_logic;
    signal nr_28_we               : std_logic;
    signal nr_29_we               : std_logic;
-   signal nr_2a_we               : std_logic;
+-- signal nr_2a_we               : std_logic;
    signal nr_2b_we               : std_logic;
    signal nr_2c_we               : std_logic;
    signal nr_2d_we               : std_logic;
@@ -1029,41 +1072,60 @@ architecture rtl of zxnext is
    signal nr_8c_we               : std_logic;
    signal nr_8e_we               : std_logic;
    signal nr_8f_we               : std_logic;
-   signal nr_c6_we               : std_logic;
+   signal nr_c2_we               : std_logic;
+   signal nr_c3_we               : std_logic;
+   signal nr_c4_we               : std_logic;
+   signal nr_c5_we               : std_logic;
+   signal nr_c8_we               : std_logic;
+   signal nr_c9_we               : std_logic;
+   signal nr_ca_we               : std_logic;
+   signal nr_d9_we               : std_logic;
+   signal nr_f0_we               : std_logic;
+   signal nr_f8_we               : std_logic;
+   signal nr_f0_rd               : std_logic;
+   signal nr_f9_we               : std_logic;
+   signal nr_fa_we               : std_logic;
    signal nr_ff_we               : std_logic;
    
-   signal nr_02_bus_reset        : std_logic;
-   signal nr_03_machine_timing   : std_logic_vector(2 downto 0) := "000";
+   signal nr_02_bus_reset        : std_logic := '0';
+   signal nr_02_iotrap           : std_logic;
+   signal nr_02_generate_mf_nmi  : std_logic;
+   signal nr_02_generate_divmmc_nmi          : std_logic;
+   signal nr_03_machine_timing   : std_logic_vector(2 downto 0) := "011";
    signal nr_03_user_dt_lock     : std_logic := '0';
    signal bootrom_en             : std_logic := '1';
-   signal eff_bootrom_en         : std_logic := '1';
-   signal nr_03_machine_type     : std_logic_vector(2 downto 0) := "000";
-   signal nr_04_romram_bank      : std_logic_vector(6 downto 0);
-   signal nr_05_joymode_0        : std_logic_vector(2 downto 0);
-   signal nr_05_joymode_1        : std_logic_vector(2 downto 0);
-   signal nr_05_io_mode          : std_logic;
+   signal nr_03_config_mode      : std_logic := '1';
+   signal nr_03_machine_type     : std_logic_vector(2 downto 0) := "011";
+   signal nr_04_romram_bank      : std_logic_vector(6 downto 0) := (others => '0');
    signal nr_05_joy0             : std_logic_vector(2 downto 0) := "001";
    signal nr_05_joy1             : std_logic_vector(2 downto 0) := "000";
-   signal nr_06_hotkey_cpu_speed_en          : std_logic;
-   signal nr_06_hotkey_5060_en   : std_logic;
-   signal nr_06_divmmc_automap_en            : std_logic;
-   signal nr_06_button_m1_nmi_en : std_logic;
-   signal nr_06_ps2_mode         : std_logic := '1';
+   signal nr_06_hotkey_cpu_speed_en          : std_logic := '1';
+   signal nr_06_hotkey_5060_en   : std_logic := '1';
+   signal nr_06_button_drive_nmi_en          : std_logic := '0';
+   signal nr_06_button_m1_nmi_en : std_logic := '0';
+   signal nr_06_ps2_mode         : std_logic := '0';   -- must be 0 for AB core power up and stay 0 unless boot changes it
    signal nr_06_psg_mode         : std_logic_vector(1 downto 0) := "00";
    signal nr_06_internal_speaker_beep        : std_logic := '0';
    signal nr_08_contention_disable           : std_logic := '0';
-   signal nr_08_psg_stereo_mode  : std_logic;
-   signal nr_08_internal_speaker_en          : std_logic;
-   signal nr_08_dac_en           : std_logic;
-   signal nr_08_port_ff_rd_en    : std_logic;
-   signal nr_08_psg_turbosound_en            : std_logic;
-   signal nr_08_keyboard_issue2  : std_logic;
-   signal nr_09_psg_mono         : std_logic_vector(2 downto 0);
-   signal nr_09_hdmi_audio_disable  : std_logic := '0';
-   signal nr_09_sprite_tie       : std_logic;
+   signal nr_08_psg_stereo_mode  : std_logic := '0';
+   signal nr_08_internal_speaker_en          : std_logic := '1';
+   signal nr_08_dac_en           : std_logic := '0';
+   signal nr_08_port_ff_rd_en    : std_logic := '0';
+   signal nr_08_psg_turbosound_en            : std_logic := '0';
+   signal nr_08_keyboard_issue2  : std_logic := '0';
+   signal nr_09_psg_mono         : std_logic_vector(2 downto 0) := (others => '0');
+   signal nr_09_hdmi_audio_en    : std_logic := '1';
+   signal nr_09_sprite_tie       : std_logic := '0';
+   signal nr_0a_mf_type          : std_logic_vector(1 downto 0) := "00";
+   signal nr_0a_divmmc_automap_en            : std_logic := '0';
+   signal nr_0a_mouse_button_reverse         : std_logic := '0';
+   signal nr_0a_mouse_dpi        : std_logic_vector(1 downto 0) := "01";
+   signal nr_0b_joy_iomode_en    : std_logic;
+   signal nr_0b_joy_iomode       : std_logic_vector(1 downto 0);
+   signal nr_0b_joy_iomode_0     : std_logic;
    signal nr_10_flashboot        : std_logic := '0';
-   signal nr_10_coreid           : std_logic_vector(4 downto 0) := "00010";
-   signal nr_11_video_timing     : std_logic_vector(2 downto 0) := "000";
+   signal nr_10_coreid           : std_logic_vector(4 downto 0) := "00001";
+   signal nr_11_video_timing     : std_logic_vector(2 downto 0) := std_logic_vector(g_video_def);
    signal nr_12_layer2_active_bank           : std_logic_vector(6 downto 0);
    signal nr_13_layer2_shadow_bank           : std_logic_vector(6 downto 0);
    signal nr_14_global_transparent_rgb       : std_logic_vector(7 downto 0);
@@ -1145,7 +1207,7 @@ architecture rtl of zxnext is
    signal nr_70_layer2_resolution      : std_logic_vector(1 downto 0);
    signal nr_70_layer2_palette_offset  : std_logic_vector(3 downto 0);
    signal nr_71_layer2_scrollx_msb     : std_logic;
-   signal nr_7f_user_register_0  : std_logic_vector(7 downto 0);
+   signal nr_7f_user_register_0  : std_logic_vector(7 downto 0) := X"FF";
    signal nr_98_pi_gpio_o        : std_logic_vector(7 downto 0);
    signal nr_99_pi_gpio_o        : std_logic_vector(7 downto 0);
    signal nr_9a_pi_gpio_o        : std_logic_vector(7 downto 0);
@@ -1154,17 +1216,17 @@ architecture rtl of zxnext is
    signal nr_81_expbus_nmi_debounce_disable  : std_logic := '0';
    signal nr_81_expbus_clken     : std_logic := '0';
    signal nr_81_expbus_speed     : std_logic_vector(1 downto 0) := "00";
-   signal nr_82_internal_port_enable         : std_logic_vector(7 downto 0);
-   signal nr_83_internal_port_enable         : std_logic_vector(7 downto 0);
-   signal nr_84_internal_port_enable         : std_logic_vector(7 downto 0);
-   signal nr_85_internal_port_enable         : std_logic_vector(3 downto 0);
+   signal nr_82_internal_port_enable         : std_logic_vector(7 downto 0) := (others => '1');
+   signal nr_83_internal_port_enable         : std_logic_vector(7 downto 0) := (others => '1');
+   signal nr_84_internal_port_enable         : std_logic_vector(7 downto 0) := (others => '1');
+   signal nr_85_internal_port_enable         : std_logic_vector(3 downto 0) := (others => '1');
    signal nr_85_internal_port_reset_type     : std_logic := '1';
-   signal nr_86_bus_port_enable  : std_logic_vector(7 downto 0);
-   signal nr_87_bus_port_enable  : std_logic_vector(7 downto 0);
-   signal nr_88_bus_port_enable  : std_logic_vector(7 downto 0);
-   signal nr_89_bus_port_enable  : std_logic_vector(3 downto 0);
+   signal nr_86_bus_port_enable  : std_logic_vector(7 downto 0) := (others => '1');
+   signal nr_87_bus_port_enable  : std_logic_vector(7 downto 0) := (others => '1');
+   signal nr_88_bus_port_enable  : std_logic_vector(7 downto 0) := (others => '1');
+   signal nr_89_bus_port_enable  : std_logic_vector(3 downto 0) := (others => '1');
    signal nr_89_bus_port_reset_type          : std_logic := '1';
-   signal nr_8a_bus_port_propagate           : std_logic_vector(5 downto 0);
+   signal nr_8a_bus_port_propagate           : std_logic_vector(5 downto 0) := (others => '0');
    signal nr_90_pi_gpio_o_en     : std_logic_vector(7 downto 0) := (others => '0');
    signal nr_91_pi_gpio_o_en     : std_logic_vector(7 downto 0) := (others => '0');
    signal nr_92_pi_gpio_o_en     : std_logic_vector(7 downto 0) := (others => '0');
@@ -1174,11 +1236,38 @@ architecture rtl of zxnext is
 -- signal nr_a3_pi_i2s_clkdiv    : std_logic_vector(7 downto 0);
    signal nr_a8_esp_gpio0_en     : std_logic := '0';
    signal nr_a9_esp_gpio0        : std_logic := '1';
-   signal nr_0a_mf_type          : std_logic_vector(1 downto 0) := "00";
-   signal nr_0a_mouse_button_reverse         : std_logic := '0';
-   signal nr_0a_mouse_dpi        : std_logic_vector(1 downto 0) := "01";
-   
-   signal machine_type_config    : std_logic;
+   signal nr_b8_divmmc_ep_0      : std_logic_vector(7 downto 0);
+   signal nr_b9_divmmc_ep_valid_0            : std_logic_vector(7 downto 0);
+   signal nr_ba_divmmc_ep_timing_0           : std_logic_vector(7 downto 0);
+   signal nr_bb_divmmc_ep_1      : std_logic_vector(7 downto 0);
+   signal nr_c0_im2_vector       : std_logic_vector(2 downto 0);
+   signal nr_c0_stackless_nmi    : std_logic;
+   signal nr_c0_int_mode_pulse_0_im2_1       : std_logic;
+   signal nr_c2_retn_address_lsb : std_logic_vector(7 downto 0);
+   signal nr_c3_retn_address_msb : std_logic_vector(7 downto 0);
+   signal nr_c4_int_en_0_expbus  : std_logic;
+   signal nr_c6_int_en_2_654     : std_logic_vector(2 downto 0);
+   signal nr_c6_int_en_2_210     : std_logic_vector(2 downto 0);
+   signal nr_cc_dma_int_en_0_7   : std_logic;
+   signal nr_cc_dma_int_en_0_10  : std_logic_vector(1 downto 0);
+   signal nr_cd_dma_int_en_1     : std_logic_vector(7 downto 0);
+   signal nr_ce_dma_int_en_2_654 : std_logic_vector(2 downto 0);
+   signal nr_ce_dma_int_en_2_210 : std_logic_vector(2 downto 0);
+   signal nr_d8_io_trap_fdc_en   : std_logic;
+   signal nr_d9_iotrap_write     : std_logic_vector(7 downto 0);
+   signal nr_da_iotrap_cause     : std_logic_vector(1 downto 0);
+   signal nr_f0_select           : std_logic := '1';
+   signal nr_f0_xdna_en          : std_logic := '0';
+   signal nr_f0_xadc_en          : std_logic := '0';
+   signal nr_f0_xdev_cmd         : std_logic_vector(7 downto 0) := (others => '0');
+   signal nr_f0_xadc_eoc         : std_logic := '0';
+   signal nr_f0_xadc_eos         : std_logic := '0';
+   signal nr_f8_xadc_dwe         : std_logic := '0';
+   signal nr_f8_xadc_daddr       : std_logic_vector(6 downto 0) := (others => '0');
+   signal nr_f8_xadc_den         : std_logic := '0';
+   signal nr_f9_xadc_d0          : std_logic_vector(7 downto 0) := (others => '0');
+   signal nr_fa_xadc_d1          : std_logic_vector(7 downto 0) := (others => '0');
+
    signal machine_type_48        : std_logic;
    signal machine_type_128       : std_logic;
    signal machine_type_p3        : std_logic;
@@ -1207,16 +1296,18 @@ architecture rtl of zxnext is
    signal nr_05_scandouble_en    : std_logic := '1';
    signal nr_09_scanlines        : std_logic_vector(1 downto 0) := "00";
    
-   signal nr_02_reset_type       : std_logic_vector(1 downto 0) := "10";
+   signal nr_02_reset_type       : std_logic_vector(2 downto 0) := "100";
    signal port_253b_dat          : std_logic_vector(7 downto 0);
    signal port_253b_dat_0        : std_logic_vector(7 downto 0);
    
-   -- PS/2 KEYMAP & HOT KEYS
+   -- PS/2 KEYMAP & KEY JOYSTICK & HOT KEYS
    
+   signal nr_keymap_sel          : std_logic := '0';
    signal nr_keymap_addr         : std_logic_vector(8 downto 0) := "000000000";
-   signal nr_keymap_dat_msb      : std_logic := '0';
+-- signal nr_keymap_dat_msb      : std_logic := '0';
    signal nr_keymap_we           : std_logic;
-   signal nr_keymap_dat          : std_logic_vector(8 downto 0);
+   signal nr_joymap_we           : std_logic;
+   signal nr_keymap_dat          : std_logic_vector(7 downto 0);
    
    signal hotkeys_1              : std_logic_vector(10 downto 1) := "0000000000";
    signal hotkeys_0              : std_logic_vector(10 downto 1) := "0000000000";
@@ -1231,8 +1322,8 @@ architecture rtl of zxnext is
    signal pcm_ay_R               : std_logic_vector(11 downto 0);
    signal port_fffd_dat          : std_logic_vector(7 downto 0);
    
-   signal port_fe_mic_final      : std_logic;
-   signal internal_speaker_beep_exclusive    : std_logic;
+   signal beep_mic_final         : std_logic;
+   signal beep_spkr_excl         : std_logic;
    
    signal pcm_dac_L              : std_logic_vector(8 downto 0);
    signal pcm_dac_R              : std_logic_vector(8 downto 0);
@@ -1273,9 +1364,10 @@ architecture rtl of zxnext is
    signal vram_bank7_do          : std_logic_vector(7 downto 0);
    
    signal video_timing_change    : std_logic;
-   signal video_timing_change_d  : std_logic := '1';
+   signal video_timing_change_d  : std_logic := '0';
+   signal video_frame_sync       : std_logic;
    
-   signal eff_nr_03_machine_timing           : std_logic_vector(2 downto 0) := "000";
+   signal eff_nr_03_machine_timing           : std_logic_vector(2 downto 0) := "011";
    signal eff_nr_05_5060         : std_logic;
    signal eff_nr_05_scandouble_en            : std_logic;
    signal eff_nr_08_contention_disable       : std_logic := '0';
@@ -1290,13 +1382,15 @@ architecture rtl of zxnext is
    signal cvc                    : unsigned(8 downto 0);
    signal rgb_hsync_n            : std_logic;
    signal rgb_vsync_n            : std_logic;
-   signal rgb_hblank_n           : std_logic;
-   signal rgb_vblank_n           : std_logic;
+   signal rgb_blank_n            : std_logic;
+   signal hdmi_pixel_en          : std_logic;
+   signal hdmi_frame_lock        : std_logic;
    
-   signal ula_int_n              : std_logic;
-   signal ula_int_pulse_n        : std_logic;
-   signal ula_int_count_end      : std_logic;
-   signal ula_int_count          : std_logic_vector(4 downto 0);
+   signal pulse_int_n            : std_logic;
+   signal ula_int_pulse          : std_logic;
+   signal line_int_pulse         : std_logic;
+   signal pulse_count_end        : std_logic;
+   signal pulse_count            : std_logic_vector(5 downto 0);
 
    signal layer_priorities_0     : std_logic_vector(2 downto 0);
    signal ula_en_0               : std_logic;
@@ -1331,8 +1425,7 @@ architecture rtl of zxnext is
    signal layer_priorities_1     : std_logic_vector(2 downto 0);
    signal video_blank_n_1        : std_logic;
    signal rgb_vsync_n_1          : std_logic;
-   signal rgb_vblank_n_1         : std_logic;
-   signal rgb_hblank_n_1         : std_logic;
+   signal rgb_blank_n_1          : std_logic;
    signal rgb_hsync_n_1          : std_logic;
    signal ula_en_1               : std_logic;
    signal ula_en_1a              : std_logic;
@@ -1400,8 +1493,7 @@ architecture rtl of zxnext is
    signal layer_priorities_2     : std_logic_vector(2 downto 0);
    signal video_blank_n_2        : std_logic;
    signal rgb_vsync_n_2          : std_logic;
-   signal rgb_vblank_n_2         : std_logic;
-   signal rgb_hblank_n_2         : std_logic;
+   signal rgb_blank_n_2          : std_logic;
    signal rgb_hsync_n_2          : std_logic;
    
    signal ula_mix_transparent    : std_logic;
@@ -1430,40 +1522,41 @@ architecture rtl of zxnext is
    signal mix_rgb                : std_logic_vector(8 downto 0);
    signal mix_rgb_transparent    : std_logic;
    signal rgb_out_2              : std_logic_vector(8 downto 0);
-   signal rgb_out_2a             : std_logic_vector(8 downto 0);
 
-   signal rgb_vsync_n_7          : std_logic;
    signal rgb_vsync_n_6          : std_logic;
    signal rgb_vsync_n_5          : std_logic;
    signal rgb_vsync_n_4          : std_logic;
    signal rgb_vsync_n_3          : std_logic;
-   signal rgb_vblank_n_7         : std_logic;
-   signal rgb_vblank_n_6         : std_logic;
-   signal rgb_vblank_n_5         : std_logic;
-   signal rgb_vblank_n_4         : std_logic;
-   signal rgb_vblank_n_3         : std_logic;
-   signal rgb_hblank_n_7         : std_logic;
-   signal rgb_hblank_n_6         : std_logic;
-   signal rgb_hblank_n_5         : std_logic;
-   signal rgb_hblank_n_4         : std_logic;
-   signal rgb_hblank_n_3         : std_logic;
-   signal rgb_hsync_n_7          : std_logic;
+   signal rgb_blank_n_6          : std_logic;
+   signal rgb_blank_n_5          : std_logic;
+   signal rgb_blank_n_4          : std_logic;
+   signal rgb_blank_n_3          : std_logic;
    signal rgb_hsync_n_6          : std_logic;
    signal rgb_hsync_n_5          : std_logic;
    signal rgb_hsync_n_4          : std_logic;
    signal rgb_hsync_n_3          : std_logic;
-   signal rgb_out_7              : std_logic_vector(8 downto 0);
    signal rgb_out_6              : std_logic_vector(8 downto 0);
    signal rgb_out_5              : std_logic_vector(8 downto 0);
    signal rgb_out_4              : std_logic_vector(8 downto 0);
    signal rgb_out_3              : std_logic_vector(8 downto 0);
-   
+   signal hdmi_pixel_en_7        : std_logic;
+   signal hdmi_pixel_en_6        : std_logic;
+   signal hdmi_pixel_en_5        : std_logic;
+   signal hdmi_pixel_en_4        : std_logic;
+   signal hdmi_pixel_en_3        : std_logic;
+   signal hdmi_pixel_en_2        : std_logic;
+   signal hdmi_pixel_en_1        : std_logic;
+
    signal rgb_vsync_n_o          : std_logic;
-   signal rgb_vblank_n_o         : std_logic;
-   signal rgb_hblank_n_o         : std_logic;
+   signal rgb_blank_n_o          : std_logic;
    signal rgb_hsync_n_o          : std_logic;
    signal rgb_out_o              : std_logic_vector(8 downto 0);
    signal rgb_csync_n_o          : std_logic;
+
+   signal xdna_load              : std_logic := '0';
+   signal xdna_shift             : std_logic := '0';
+   signal xadc_reset             : std_logic := '0';
+   signal xadc_convst            : std_logic := '0';
 
 begin
 
@@ -1488,10 +1581,13 @@ begin
    o_KEYMAP_ADDR <= nr_keymap_addr;
    o_KEYMAP_DATA <= nr_keymap_dat;
    o_KEYMAP_WE <= nr_keymap_we;
+   o_JOYMAP_WE <= nr_joymap_we;
 
-   o_JOY_IO_MODE <= io_mode(0) & io_mode_en;
-   o_JOY_IO_MODE_LR <= io_mode_lr;
-   o_JOY_IO_MODE_PIN_7 <= io_mode_pin_7;
+   o_JOY_IO_MODE_EN <= nr_0b_joy_iomode_en;
+   o_JOY_IO_MODE_PIN_7 <= joy_iomode_pin7;
+
+   o_JOY_LEFT_TYPE <= nr_05_joy0;
+   o_JOY_RIGHT_TYPE <= nr_05_joy1;
 
    o_PS2_MODE <= nr_06_ps2_mode;
    o_MOUSE_CONTROL <= nr_0a_mouse_button_reverse & nr_0a_mouse_dpi;
@@ -1507,13 +1603,13 @@ begin
    o_SPI_MOSI <= spi_mosi;
 
    o_UART0_TX <= uart0_tx_esp;
+   o_UART0_RTR_n <= esp_uart_rtr_n;
 
    o_RGB <= rgb_out_o;
    o_RGB_CS_n <= rgb_csync_n_o;
    o_RGB_VS_n <= rgb_vsync_n_o;
    o_RGB_HS_n <= rgb_hsync_n_o;
-   o_RGB_VB_n <= rgb_vblank_n_o;
-   o_RGB_HB_n <= rgb_hblank_n_o;
+   o_RGB_BK_n <= rgb_blank_n_o;
       
    o_VIDEO_50_60 <= eff_nr_05_5060;
    o_VIDEO_SCANLINES <= eff_nr_09_scanlines;
@@ -1523,23 +1619,23 @@ begin
    o_MACHINE_TIMING <= eff_nr_03_machine_timing;
    
    o_HDMI_RESET <= video_timing_change_d;
+   o_HDMI_PIXEL <= hdmi_pixel_en_7;
+   o_HDMI_LOCK  <= hdmi_frame_lock;
    
-   o_AUDIO_HDMI_AUDIO_EN <= not nr_09_hdmi_audio_disable;
-   
+   o_AUDIO_HDMI_AUDIO_EN <= nr_09_hdmi_audio_en;
+
    o_AUDIO_SPEAKER_EN <= nr_08_internal_speaker_en;
-   o_AUDIO_SPEAKER_BEEP <= internal_speaker_beep_exclusive;
-   
-   o_AUDIO_MIC <= port_fe_mic xor pi_fe_ear;
-   
-   o_AUDIO_SPEAKER_EAR <= port_fe_ear;
-   o_AUDIO_SPEAKER_MIC <= port_fe_mic_final;
-   
+   o_AUDIO_SPEAKER_EXCL <= beep_spkr_excl;
+
+   o_AUDIO_MIC <= beep_mic_final;
+   o_AUDIO_EAR <= port_fe_ear;
+
    o_AUDIO_L <= pcm_audio_L;
    o_AUDIO_R <= pcm_audio_R;
 
    o_RAM_A_ADDR <= sram_addr;
    o_RAM_A_REQ <= sram_req_t;
-   o_RAM_A_RD <= sram_rd;
+   o_RAM_A_RD_n <= sram_rd_n;
    o_RAM_A_DO <= cpu_do;
 
    o_RAM_B_ADDR <= layer2_addr_eff;
@@ -1552,10 +1648,11 @@ begin
    o_BUS_RD_n <= cpu_rd_n;
    o_BUS_WR_n <= cpu_wr_n;
    o_BUS_M1_n <= cpu_m1_n;
-   o_BUS_INT_n <= ula_int_n;
+   o_BUS_INT_n <= pulse_int_n and im2_int_n;
    o_BUS_BUSAK_n <= '1';
    o_BUS_HALT_n <= cpu_halt_n;
    o_BUS_RFSH_n <= cpu_rfsh_n;
+   o_BUS_IEO <= im2_ieo;
 
    o_BUS_EN <= expbus_eff_en;
    o_BUS_CLKEN <= expbus_eff_clken;
@@ -1565,8 +1662,20 @@ begin
    o_ESP_GPIO_0 <= nr_a9_esp_gpio0;
    o_ESP_GPIO_0_EN <= nr_a8_esp_gpio0_en;
 
-   o_GPIO <= pi_gpio_o(27 downto 22) & gpio_21 & gpio_20 & gpio_19 & gpio_18 & pi_gpio_o(17 downto 16) & gpio_15 & gpio_14 & pi_gpio_o(13 downto 12) & gpio_11 & gpio_10 & pi_gpio_o(9) & gpio_08 & gpio_07 & pi_gpio_o(6 downto 4) & gpio_03 & gpio_02 & pi_gpio_o(1 downto 0);
-   o_GPIO_EN <= pi_gpio_en(27 downto 22) & gpio_21_en & gpio_20_en & gpio_19_en & gpio_18_en & pi_gpio_en(17 downto 16) & gpio_15_en & gpio_14_en & pi_gpio_en(13 downto 12) & gpio_11_en & gpio_10_en & gpio_09_en & gpio_08_en & gpio_07_en & pi_gpio_en(6 downto 4) & gpio_03_en & gpio_02_en & pi_gpio_en(1 downto 0);
+   o_GPIO <= pi_gpio_o(27 downto 22) & gpio_21 & gpio_20 & gpio_19 & gpio_18 & gpio_17 & gpio_16 & gpio_15 & gpio_14 & pi_gpio_o(13 downto 12) & gpio_11 & gpio_10 & pi_gpio_o(9) & gpio_08 & gpio_07 & pi_gpio_o(6 downto 4) & gpio_03 & gpio_02 & pi_gpio_o(1 downto 0);
+   o_GPIO_EN <= pi_gpio_en(27 downto 22) & gpio_21_en & gpio_20_en & gpio_19_en & gpio_18_en & gpio_17_en & gpio_16_en & gpio_15_en & gpio_14_en & pi_gpio_en(13 downto 12) & gpio_11_en & gpio_10_en & gpio_09_en & gpio_08_en & gpio_07_en & pi_gpio_en(6 downto 4) & gpio_03_en & gpio_02_en & pi_gpio_en(1 downto 0);
+
+   o_XDNA_LOAD <= xdna_load;
+   o_XDNA_SHIFT <= xdna_shift;
+
+   o_XADC_RESET <= xadc_reset;
+   o_XADC_DEN <= nr_f8_xadc_den;
+   o_XADC_DADDR <= nr_f8_xadc_daddr;
+   o_XADC_DWE <= nr_f8_xadc_dwe;
+   o_XADC_DI <= nr_fa_xadc_d1 & nr_f9_xadc_d0;
+   o_XADC_CONVST <= xadc_convst;
+
+   o_XADC_CONTROL <= '0';
 
    ------------------------------------------------------------
    -- RESET ---------------------------------------------------
@@ -1574,10 +1683,16 @@ begin
    
    -- incoming reset signals are asserted for some time by the top level module
    
-   reset <= reset_hard or reset_soft;
-   
-   reset_soft <= i_RESET_SOFT;
-   reset_hard <= i_RESET_HARD;
+   reset <= i_RESET;
+
+   process (i_CLK_28)
+   begin
+      if rising_edge(i_CLK_28) then
+         if nr_02_soft_reset = '1' then
+            nr_02_reset_type <= '0' & nr_02_reset_type(2) & (nr_02_reset_type(1) or nr_02_reset_type(0));
+         end if;
+      end if;
+   end process;
    
    ------------------------------------------------------------
    -- Z80 & DMA -----------------------------------------------
@@ -1623,6 +1738,7 @@ begin
 
       cpu_d_i        => z80_do,
       wait_n_i       => dma_wait_n,
+      dma_delay_i    => im2_dma_delay,
 
       bus_busreq_n_i => '1',            -- busreq in daisy chain (i_BUS_BUSREQ_n)
       cpu_busreq_n_o => dma_busrq_n,    -- busreq out
@@ -1665,70 +1781,290 @@ begin
    dma_holds_bus <= '1' when z80_busak_n = '0' else '0';
    
    cpu_m1_n <= '1' when dma_holds_bus = '1' else z80_m1_n;
-   cpu_mreq_n <= dma_mreq_n when dma_holds_bus = '1' else z80_mreq_n;
+   cpu_mreq_n <= dma_mreq_n when dma_holds_bus = '1' else (z80_mreq_n or z80_stackless_nmi);
    cpu_iorq_n <= dma_iorq_n when dma_holds_bus = '1' else z80_iorq_n;
    cpu_rd_n <= dma_rd_n when dma_holds_bus = '1' else z80_rd_n;
    cpu_wr_n <= dma_wr_n when dma_holds_bus = '1' else z80_wr_n;
    cpu_rfsh_n <= '1' when dma_holds_bus = '1' else z80_rfsh_n;
-   cpu_halt_n <= '1' when dma_holds_bus = '1' else z80_halt_n;
+   cpu_halt_n <= z80_halt_n;
    cpu_a <= dma_a when dma_holds_bus = '1' else z80_a;
    cpu_do <= dma_do when dma_holds_bus = '1' else z80_do;
 
+   expbus_disable_int <= '1' when expbus_eff_en = '0' or expbus_eff_disable_io = '1' or nr_c4_int_en_0_expbus = '0' else '0';
+
    z80_wait_n <= '0' when (ula_wait_n = '0') or (ulap_wait_n = '0') or (sram_wait_n = '0') or (i_BUS_WAIT_n = '0' and expbus_eff_en = '1') else '1';
-   z80_int_n <= ula_int_n and (i_BUS_INT_n or (not expbus_eff_en) or expbus_eff_disable_io);
+   z80_int_n <= ((pulse_int_n and im2_int_n) or not expbus_disable_int) and (i_BUS_INT_n or expbus_disable_int);
    z80_nmi_n <= nmi_generate_n;
    z80_busrq_n <= dma_busrq_n;
    
    dma_wait_n <= z80_wait_n and spi_wait_n;
 
-   cpu_di <= cpu_di_mem when cpu_mreq_n = '0' and cpu_rfsh_n = '1' else cpu_di_io when cpu_iorq_n = '0' else X"FF";
-   
-   cpu_di_mem <= bootrom_do when cpu_a(15 downto 14) = "00" and eff_bootrom_en = '1' else
-      i_BUS_DI when sram_romcs = '1' and eff_expbus_romcs_replace = '0' else
-      cpu_bank5_do when sram_bank5 = '1' else
-      cpu_bank7_do when sram_bank7 = '1' else
-      i_RAM_A_DI;
-   
-   cpu_di_io <= port_rd_dat when port_internal_rd_response = '1' and bus_iorq_ula = '0' else i_BUS_DI when expbus_eff_en = '1' and expbus_eff_disable_io = '0' else X"FF";
+   process (z80_stackless_nmi, dma_holds_bus, z80_retn_address, cpu_mreq_n, cpu_rfsh_n, cpu_a, bootrom_en, bootrom_do, im2_ieo,
+      sram_romcs_en, sram_pre_romcs_replace, i_BUS_DI, sram_bank5, cpu_bank5_do, sram_bank7, cpu_bank7_do, i_RAM_A_DI, cpu_m1_n,
+      cpu_iorq_n, port_internal_rd_response, bus_iorq_ula, port_rd_dat, im2_vector, expbus_eff_en, expbus_eff_disable_io, i_BUS_BUSREQ_n)
+   begin
+      if z80_stackless_nmi = '1' and dma_holds_bus = '0' then
+      
+         cpu_di <= z80_retn_address;
+         
+      elsif cpu_mreq_n = '0' and cpu_rfsh_n = '1' then
+      
+         if cpu_a(15 downto 14) = "00" and bootrom_en = '1' then
+            cpu_di <= bootrom_do;
+         elsif sram_romcs_en = '1' and sram_pre_romcs_replace = '0' then
+            cpu_di <= i_BUS_DI;
+         elsif sram_bank5 = '1' then
+            cpu_di <= cpu_bank5_do;
+         elsif sram_bank7 = '1' then
+            cpu_di <= cpu_bank7_do;
+         else
+            cpu_di <= i_RAM_A_DI;
+         end if;
 
-   -- todo: sticky maskable interrupts
+      elsif cpu_iorq_n = '0' then
+      
+         if cpu_m1_n = '0' and im2_ieo = '0' then
+            cpu_di <= im2_vector;
+         elsif port_internal_rd_response = '1' and bus_iorq_ula = '0' then
+            cpu_di <= port_rd_dat;
+         elsif expbus_eff_en = '1' and expbus_eff_disable_io = '0' then
+            cpu_di <= i_BUS_DI;
+         else
+            cpu_di <= X"FF";
+         end if;
+         
+      else
+         cpu_di <= X"FF";
+      end if;
+   end process;
+   
+   --
+   -- maskable interrupts
+   --
+
+   -- reti/retn/im decoder
+   
+   im2ctl_mod: entity work.im2_control
+   port map (
+      i_CLK_CPU         => i_CLK_CPU,
+      i_reset           => reset,
+      
+      i_m1_n            => cpu_m1_n,
+      i_mreq_n          => cpu_mreq_n,
+      i_iorq_n          => cpu_iorq_n,
+      
+      i_rd_n            => cpu_rd_n,
+      i_wr_n            => cpu_wr_n,
+      
+      i_cpu_d           => cpu_di,
+      
+      o_im_mode         => z80_im_mode,   -- 00 = im 0, 01 = im 1, 10 = im 2
+
+      o_reti_decode     => im2_reti_decode,
+      o_reti_seen       => z80_reti_seen_t3,
+      
+      o_retn_seen       => z80_retn_seen_t3,
+      
+      o_dma_delay       => dma_delay
+   );
+
+   process (i_CLK_28)
+   begin
+      if rising_edge(i_CLK_28) then
+         if reset = '1' then
+            z80_retn_seen_28_d <= '0';
+         else
+            z80_retn_seen_28_d <= z80_retn_seen_t3;
+         end if;
+      end if;
+   end process;
+   
+   z80_retn_seen_28 <= z80_retn_seen_t3 and not z80_retn_seen_28_d;
+
+   -- peripheral interrupt handlers
+   
+   -- priority order is bit 0 (highest) to bit 13 (lowest)
+   -- priority number also corresponds to interrupt vector
+   --
+   --      0 = line
+   --      1 = uart0 rx
+   --      2 = uart1 rx
+   --   3:10 = ctc 0-7
+   --     11 = ula
+   --     12 = uart0 tx
+   --     13 = uart1 tx   
+   
+   im2_int_req <= uart1_tx_empty & uart0_tx_empty & ula_int_pulse & ctc_zc_to & 
+      (uart1_rx_near_full or (uart1_rx_avail and not nr_c6_int_en_2_654(1))) & 
+      (uart0_rx_near_full or (uart0_rx_avail and not nr_c6_int_en_2_210(1))) & 
+      line_int_pulse;
+
+   im2_int_unq <= "00" & (nr_20_we and nr_wr_dat(6)) & "0000" & 
+      ((nr_20_we & nr_20_we & nr_20_we & nr_20_we) and nr_wr_dat(3 downto 0)) & "00" & (nr_20_we and nr_wr_dat(7));
+   
+   im2_int_en <= nr_c6_int_en_2_654(2) & nr_c6_int_en_2_210(2) & ula_int_en(0) & ctc_int_en & 
+      (nr_c6_int_en_2_654(1) or nr_c6_int_en_2_654(0)) & (nr_c6_int_en_2_210(1) or nr_c6_int_en_2_210(0)) & ula_int_en(1);
+  
+   im2_status_clear <= (nr_ca_we and nr_wr_dat(6)) & (nr_ca_we and nr_wr_dat(2)) & ((nr_c8_we and nr_wr_dat(0))) & 
+      ((nr_c9_we & nr_c9_we & nr_c9_we & nr_c9_we & nr_c9_we & nr_c9_we & nr_c9_we & nr_c9_we) and nr_wr_dat) & 
+      (nr_ca_we and (nr_wr_dat(5) or nr_wr_dat(4))) & (nr_ca_we and (nr_wr_dat(1) or nr_wr_dat(0))) & 
+      ((nr_c8_we and nr_wr_dat(1)));
+   
+   im2_dma_int_en <= nr_ce_dma_int_en_2_654(2) & nr_ce_dma_int_en_2_210(2) & nr_cc_dma_int_en_0_10(0) & nr_cd_dma_int_en_1 &
+      (nr_ce_dma_int_en_2_654(1) or nr_ce_dma_int_en_2_654(0)) & (nr_ce_dma_int_en_2_210(1) or nr_ce_dma_int_en_2_210(0)) & nr_cc_dma_int_en_0_10(1);
+   
+   im2per_mod: entity work.peripherals
+   generic map (
+      NUM_PERIPH           => 14,
+      VEC_BITS             => 4,
+      EXCEPTION            => "0000100000000000"   -- (hard coded 16 bits in peripherals) ula is the only exception
+   )
+   port map (
+      i_CLK_28             => i_CLK_28,
+      i_CLK_CPU            => i_CLK_CPU,
+      i_reset              => reset,
+      
+      i_m1_n               => cpu_m1_n,
+      i_iorq_n             => cpu_iorq_n,
+      
+      i_im2_mode           => z80_im_mode(1),
+      i_mode_pulse_0_im2_1 => nr_c0_int_mode_pulse_0_im2_1,
+
+      i_int_en             => im2_int_en,
+      i_int_req            => im2_int_req,
+      i_int_unq            => im2_int_unq,
+      
+      o_int_status         => im2_int_status,    -- CLK_28
+      i_int_status_clear   => im2_status_clear,  -- CLK_28
+      
+      i_iei                => '1',
+      o_ieo                => im2_ieo,
+      
+      i_reti_decode        => im2_reti_decode,
+      i_reti_seen          => z80_reti_seen_t3,
+   
+      o_int_n              => im2_int_n,
+      o_vector             => im2_vec,
+      
+      i_dma_int_en         => im2_dma_int_en,
+      o_dma_int            => im2_dma_int,
+      
+      o_pulse_en           => pulse_int_en
+   );
+
+   im2_vector <= nr_c0_im2_vector & im2_vec & '0';
+
+   process (i_CLK_CPU)
+   begin
+      if rising_edge(i_CLK_CPU) then
+         if reset = '1' then
+            im2_dma_delay <= '0';
+         else
+            im2_dma_delay <= (im2_dma_int) or (nmi_activated and nr_cc_dma_int_en_0_7) or (im2_dma_delay and dma_delay);
+         end if;
+      end if;
+   end process;
+
+   -- pulsed interrupt
+   
+   -- duration is 32 cpu cycles for 48K and +3
+   -- duration is 36 cpu cycles for 128K and pentagon
+
+   process (i_CLK_28)
+   begin
+      -- int is sampled on rising edge of cpu clock
+      if falling_edge(i_CLK_28) then
+         if reset = '1' then
+            pulse_int_n <= '1';
+         elsif pulse_int_n = '1' then
+            if pulse_int_en = '1' then
+               pulse_int_n <= '0';
+            end if;
+         elsif pulse_count_end = '1' then
+            pulse_int_n <= '1';
+         end if;
+      end if;
+   end process;
+
+   pulse_count_end <= pulse_count(5) and (machine_timing_48 or machine_timing_p3 or pulse_count(2));
+   
+   process (i_CLK_CPU)
+   begin
+      if rising_edge(i_CLK_CPU) then
+         if pulse_int_n = '1' then
+            pulse_count <= (others => '0');
+         elsif pulse_count_end = '0' then
+            pulse_count <= pulse_count + 1;
+         end if;
+      end if;
+   end process;
    
    --
    -- nmi
    --
 
-   -- first come first serve
+   -- stackless nmi response
+   
+   z80_stackless_nmi <= '1' when (nr_c0_stackless_nmi = '1' and (Z80N_command_s = NMIACK_LSB or Z80N_command_s = NMIACK_MSB)) or (z80_stackless_retn_en = '1' and (Z80N_command_s = RETN_LSB or Z80N_command_s = RETN_MSB)) else '0';
    
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
          if reset = '1' then
-            nmi_expbus_en <= '1';
-         elsif nmi_expbus = '1' then
-            nmi_expbus_en <= '0';
-         elsif i_BUS_NMI_n = '1' then
-            nmi_expbus_en <= '1';
+            nr_c2_retn_address_lsb <= (others => '0');
+            nr_c3_retn_address_msb <= (others => '0');
+         elsif (Z80N_command_s = NMIACK_LSB) and cpu_wr_n = '0' then
+            nr_c2_retn_address_lsb <= cpu_do;
+         elsif (Z80N_command_s = NMIACK_MSB) and cpu_wr_n = '0' then
+            nr_c3_retn_address_msb <= cpu_do;
+         elsif nr_c2_we = '1' then
+            nr_c2_retn_address_lsb <= nr_wr_dat;
+         elsif nr_c3_we = '1' then
+            nr_c3_retn_address_msb <= nr_wr_dat;
+         end if;
+      end if;
+   end process;
+   
+   process (i_CLK_CPU)
+   begin
+      if rising_edge(i_CLK_CPU) then
+         if reset = '1' or nr_c0_stackless_nmi = '0' then
+            z80_stackless_retn_en <= '0';
+         elsif Z80N_command_s = NMIACK_LSB then
+            z80_stackless_retn_en <= '1';
+         elsif Z80N_command_s = RETN_MSB and cpu_rd_n = '1' then
+            z80_stackless_retn_en <= '0';
          end if;
       end if;
    end process;
 
+   z80_retn_address <= nr_c2_retn_address_lsb when Z80N_command_s = RETN_LSB else nr_c3_retn_address_msb;
+
+   -- first come first serve for incoming nmi interrupt
+
    nmi_assert_expbus <= '1' when expbus_eff_en = '1' and expbus_eff_disable_mem = '0' and i_BUS_NMI_n = '0' else '0';
-   
-   nmi_activated <= nmi_mf or nmi_divmmc or nmi_expbus;
-   
+   nmi_assert_mf <= '1' when (hotkey_m1 = '1' or nmi_sw_gen_mf = '1') and nr_06_button_m1_nmi_en = '1' else '0';
+   nmi_assert_divmmc <= '1' when (hotkey_drive = '1' or nmi_sw_gen_divmmc = '1') and nr_06_button_drive_nmi_en = '1' else '0';
+
+   nmi_activated <= nmi_mf or nmi_divmmc or nmi_expbus;  -- must be applied to z80 /nmi immediately
+
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
-         if reset = '1' or nmi_state = S_NMI_END or machine_type_config = '1' then
+         if reset = '1' then
+            nmi_mf <= '0';
+            nmi_divmmc <= '0';
+            nmi_expbus <= '0';
+         elsif nr_03_config_mode = '1' or nmi_state = S_NMI_END then
             nmi_mf <= '0';
             nmi_divmmc <= '0';
             nmi_expbus <= '0';
          elsif nmi_activated = '0' then
-            if hotkey_m1 = '1' and nr_06_button_m1_nmi_en = '1' and port_e3_reg(7) = '0' and divmmc_nmi_hold = '0' then
+            if nmi_assert_mf = '1' and port_e3_reg(7) = '0' and divmmc_nmi_hold = '0' then
                nmi_mf <= '1';
-            elsif hotkey_drive = '1' and nr_06_divmmc_automap_en = '1' and mf_is_active = '0' then
+            elsif nmi_assert_divmmc = '1' and mf_is_active = '0' then
                nmi_divmmc <= '1';
-            elsif nmi_expbus_en = '1' and nmi_assert_expbus = '1' then
+            elsif nmi_assert_expbus = '1' then
                nmi_expbus <= '1';
             end if;
          end if;
@@ -1737,57 +2073,57 @@ begin
    
    nmi_hold <= mf_nmi_hold when nmi_mf = '1' else divmmc_nmi_hold when nmi_divmmc = '1' else nmi_assert_expbus;
    
-   -- nmi state machine
-   
-   nmi_holding <= '1' when nmi_hold = '1' or dma_holds_bus = '1' else '0';
-   nmi_opus <= '1' when nmi_mf = '1' and nr_81_expbus_nmi_debounce_disable = '1' and nmi_assert_expbus = '1' else '0';
-   
-   process (nmi_state, nmi_activated, nmi_holding, nmi_opus)
+   process (nmi_state, nmi_activated, mf_a_0066, cpu_m1_n, cpu_mreq_n, nmi_hold, cpu_wr_n)
    begin
       case nmi_state is
          when S_NMI_IDLE =>
             if nmi_activated = '1' then
-               nmi_state_next <= S_NMI_ASSERT;
+               nmi_state_next <= S_NMI_FETCH;
             else
                nmi_state_next <= S_NMI_IDLE;
             end if;
-         when S_NMI_ASSERT =>
-            nmi_state_next <= S_NMI_HOLD;
-         when S_NMI_OPUS =>                    -- separate to avoid button activation in multiface
-            if nmi_opus = '1' then
-               nmi_state_next <= S_NMI_OPUS;
-            else
+         when S_NMI_FETCH =>
+            if mf_a_0066 = '1' and cpu_m1_n = '0' and cpu_mreq_n = '0' then
                nmi_state_next <= S_NMI_HOLD;
+            else
+               nmi_state_next <= S_NMI_FETCH;
             end if;
-         when S_NMI_HOLD  =>
-            if nmi_holding = '0' then
-               nmi_state_next <= S_NMI_END;
-            elsif nmi_opus = '1' then          -- multiface + opus discovery
-               nmi_state_next <= S_NMI_OPUS;
-            else
+         when S_NMI_HOLD =>
+            if nmi_hold = '1' then
                nmi_state_next <= S_NMI_HOLD;
+            else
+               nmi_state_next <= S_NMI_END;
             end if;
 --       when S_NMI_END =>
---          nmi_state_next <= S_NMI_IDLE;
          when others =>
-            nmi_state_next <= S_NMI_IDLE;
+            if cpu_wr_n = '1' then             -- do not transition until io write cycle completes
+               nmi_state_next <= S_NMI_IDLE;
+            else
+               nmi_state_next <= S_NMI_END;
+            end if;
       end case;
    end process;
    
    process (i_CLK_CPU)
    begin
       if rising_edge(i_CLK_CPU) then
-         if reset = '1' or machine_type_config = '1' then
+         if reset = '1' then
+            nmi_state <= S_NMI_IDLE;
+         elsif nr_03_config_mode = '1' then
             nmi_state <= S_NMI_IDLE;
          else
             nmi_state <= nmi_state_next;
          end if;
       end if;
-   end process;
+   end process;   
    
-   nmi_generate_n <= '0' when nmi_state = S_NMI_ASSERT or nmi_state = S_NMI_OPUS else '1';
-   nmi_mf_button <= '1' when nmi_mf = '1' and nmi_state = S_NMI_ASSERT else '0';
-   nmi_divmmc_button <= '1' when nmi_divmmc = '1' and nmi_state = S_NMI_ASSERT else '0';
+   nmi_accept_cause <= '1' when nmi_state = S_NMI_IDLE or nmi_state = S_NMI_FETCH else '0';
+   
+   -- nmi signals to cpu, multiface, divmmc
+   
+   nmi_generate_n <= '0' when (nmi_state = S_NMI_IDLE and nmi_activated = '1') or nmi_state = S_NMI_FETCH or (nr_81_expbus_nmi_debounce_disable = '1' and nmi_assert_expbus = '1') else '1';
+   nmi_mf_button <= '1' when nmi_mf = '1' and nmi_state = S_NMI_IDLE else '0';
+   nmi_divmmc_button <= '1' when nmi_divmmc = '1' and nmi_state = S_NMI_IDLE else '0';
 
    ------------------------------------------------------------
    -- EXPANSION BUS -------------------------------------------
@@ -1802,9 +2138,7 @@ begin
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
-         if reset_hard = '1' then
-            nr_80_expbus <= (others => '0');
-         elsif reset_soft = '1' then
+         if reset = '1' then
             nr_80_expbus(7 downto 4) <= nr_80_expbus(3 downto 0);
          elsif nr_80_we = '1' then
             nr_80_expbus <= nr_wr_dat;
@@ -1829,7 +2163,7 @@ begin
    --
    
    -- filter io cycles
-   -- external devices should see port fe, memory paging
+   -- external devices should optionally see port fe, memory paging
 
    port_propagate_fe <= port_fe and nr_8a_bus_port_propagate(0);
    port_propagate_7ffd <= port_7ffd and nr_8a_bus_port_propagate(1);
@@ -1838,10 +2172,21 @@ begin
    port_propagate_ff <= port_ff and nr_8a_bus_port_propagate(4);
    port_propagate_eff7 <= port_eff7 and nr_8a_bus_port_propagate(5);
 
-   port_propagate <= port_propagate_fe or port_propagate_7ffd or port_propagate_dffd or port_propagate_1ffd or port_propagate_ff or port_propagate_eff7;
+   port_propagate <= port_propagate_fe or bus_iorq_ula_q or port_propagate_7ffd or port_propagate_dffd or port_propagate_1ffd or port_propagate_ff or port_propagate_eff7;
    
    bus_iorq_n <= cpu_iorq_n or (cpu_m1_n and ((port_internal_response or expbus_eff_disable_io) and not port_propagate));
-   bus_mreq_n <= cpu_mreq_n or ((expbus_eff_disable_mem or (not cpu_a(15) and (not cpu_a(14)) and not sram_romcs_en)) and cpu_rfsh_n);
+   bus_mreq_n <= cpu_mreq_n or (cpu_rfsh_n and (expbus_eff_disable_mem or ((not cpu_a(15)) and (not cpu_a(14)) and not sram_mem_hide_n)));
+
+   bus_iorq_ula <= expbus_eff_en and i_BUS_IORQULA_n and port_fe and cpu_m1_n and not expbus_eff_disable_io;
+   
+   process (i_CLK_28)
+   begin
+      if rising_edge(i_CLK_28) then
+         if cpu_iorq_n = '1' then
+            bus_iorq_ula_q <= bus_iorq_ula;   -- if iorqula is high from port address then show the port fe io cycle (prevent oscillations on if1 iorq)
+         end if;
+      end if;
+   end process;
 
 -- o_BUS_ADDR <= cpu_a;
 -- o_BUS_DO <= cpu_do;
@@ -1850,7 +2195,7 @@ begin
 -- o_BUS_RD_n <= cpu_rd_n;
 -- o_BUS_WR_n <= cpu_wr_n;
 -- o_BUS_M1_n <= cpu_m1_n;
--- o_BUS_INT_n <= ula_int_n;
+-- o_BUS_INT_n <= pulse_int_n and im2_int_n;
 -- o_BUS_BUSAK_n <= '1';
 -- o_BUS_HALT_n <= cpu_halt_n;
 -- o_BUS_RFSH_n <= cpu_rfsh_n;
@@ -1862,9 +2207,7 @@ begin
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
-         if reset_hard = '1' then
-            nr_8c_altrom <= (others => '0');
-         elsif reset_soft = '1' then
+         if reset = '1' then
             nr_8c_altrom(7 downto 4) <= nr_8c_altrom(3 downto 0);
          elsif nr_8c_we = '1' then
             nr_8c_altrom <= nr_wr_dat;
@@ -1911,7 +2254,7 @@ begin
    gpio_07 <= spi_ss_rpi1_n when pi_spi0_en = '1' else pi_gpio_o(7);
    
    gpio_09_en <= '0' when pi_spi0_en = '1' else pi_gpio_en(9);
-   pi_spi0_miso <= i_GPIO(9) when pi_spi0_en = '1' else '1';
+   pi_spi0_miso <= i_GPIO(9) when pi_spi0_en = '1' else '0';
    
    gpio_10_en <= '1' when pi_spi0_en = '1' else pi_gpio_en(10);
    gpio_10 <= spi_mosi when pi_spi0_en = '1' else pi_gpio_o(10);
@@ -1930,16 +2273,21 @@ begin
    pi_i2c1_sda <= i_GPIO(2) when pi_i2c1_en = '1' else '1';
    pi_i2c1_scl <= i_GPIO(3) when pi_i2c1_en = '1' else '1';
 
-   -- uart 14,15 (need to cross wires for pi!)
+   -- uart 14,15(,16,17) (need to cross wires for pi!)
    -- connect Rx to GPIO14 if pi_uart_rxtx = 1
-   
+
    gpio_14_en <= not pi_uart_rxtx when pi_uart_en = '1' else pi_gpio_en(14);
    gpio_15_en <= pi_uart_rxtx when pi_uart_en = '1' else pi_gpio_en(15);
+   gpio_16_en <= pi_uart_rxtx when pi_uart_en = '1' and uart1_hwflow_en = '1' else pi_gpio_en(16);
+   gpio_17_en <= not pi_uart_rxtx when pi_uart_en = '1' and uart1_hwflow_en = '1' else pi_gpio_en(17);
    
    gpio_14 <= uart1_tx_pi when pi_uart_en = '1' else pi_gpio_o(14);
    gpio_15 <= uart1_tx_pi when pi_uart_en = '1' else pi_gpio_o(15);
+   gpio_16 <= pi_uart_rtr_n when pi_uart_en = '1' and uart1_hwflow_en = '1' else pi_gpio_o(16);
+   gpio_17 <= pi_uart_rtr_n when pi_uart_en = '1' and uart1_hwflow_en = '1' else pi_gpio_o(17);
    
    pi_uart_rx <= (i_GPIO(14) and pi_uart_rxtx) or (i_GPIO(15) and not pi_uart_rxtx) when pi_uart_en = '1' else '1';
+   pi_uart_cts_n <= (i_GPIO(17) and pi_uart_rxtx) or (i_GPIO(16) and not pi_uart_rxtx) when pi_uart_en = '1' and uart1_hwflow_en = '1' else '0';
 
    -- i2s 18,19,20,21
    
@@ -1985,15 +2333,13 @@ begin
    -- pi gpio output
    --
 
--- o_GPIO <= pi_gpio_o(27 downto 22) & gpio_21 & gpio_20 & gpio_19 & gpio_18 & pi_gpio_o(17 downto 16) & gpio_15 & gpio_14 & pi_gpio_o(13 downto 12) & gpio_11 & gpio_10 & pi_gpio_o(9) & gpio_08 & gpio_07 & pi_gpio_o(6 downto 4) & gpio_03 & gpio_02 & pi_gpio_o(1 downto 0);
--- o_GPIO_EN <= pi_gpio_en(27 downto 22) & gpio_21_en & gpio_20_en & gpio_19_en & gpio_18_en & pi_gpio_en(17 downto 16) & gpio_15_en & gpio_14_en & pi_gpio_en(13 downto 12) & gpio_11_en & gpio_10_en & gpio_09_en & gpio_08_en & gpio_07_en & pi_gpio_en(6 downto 4) & gpio_03_en & gpio_02_en & pi_gpio_en(1 downto 0);
+-- o_GPIO <= ...
+-- o_GPIO_EN <= ...
 
 
    ------------------------------------------------------------
    -- PORT DECODING -------------------------------------------
    ------------------------------------------------------------
-
-   -- todo: investigate switching to pentagon method where decoding depends on instruction type "IN A,(n)" vs "IN r,(C)"
 
    --
    -- active port enables (changed during iowr to port 253b or nextreg instruction)
@@ -2072,17 +2418,6 @@ begin
          end if;
       end if;
    end process;
-   
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if cpu_iorq_n = '1' or memcycle_delay_complete = '0' then
-            bus_iorq_ula <= expbus_eff_en and i_BUS_IORQULA_n and port_fe and cpu_m1_n and not expbus_eff_disable_io;
-         else
-            bus_iorq_ula <= '0';
-         end if;
-      end if;
-   end process;
 
    --
    -- early decode of port addresses to allow filtering of io cycles to expansion bus
@@ -2097,17 +2432,12 @@ begin
       port_10xx_msb <= '0';
       port_11xx_msb <= '0';
       port_12xx_msb <= '0';
-      port_13xx_msb <= '0';
-      port_14xx_msb <= '0';
-      port_15xx_msb <= '0';
       port_1fxx_msb <= '0';
       port_24xx_msb <= '0';
       port_25xx_msb <= '0';
       port_30xx_msb <= '0';
       port_3dxx_msb <= '0';
-      port_7fxx_msb <= '0';
       port_bfxx_msb <= '0';
-      port_fexx_msb <= '0';
       port_ffxx_msb <= '0';
       
       case cpu_a(15 downto 8) is
@@ -2118,17 +2448,12 @@ begin
          when X"10"  => port_10xx_msb <= '1';
          when X"11"  => port_11xx_msb <= '1';
          when X"12"  => port_12xx_msb <= '1';
-         when X"13"  => port_13xx_msb <= '1';
-         when X"14"  => port_14xx_msb <= '1';
-         when X"15"  => port_15xx_msb <= '1';
          when X"1F"  => port_1fxx_msb <= '1';
          when X"24"  => port_24xx_msb <= '1';
          when X"25"  => port_25xx_msb <= '1';
          when X"30"  => port_30xx_msb <= '1';
          when X"3D"  => port_3dxx_msb <= '1';
-         when X"7F"  => port_7fxx_msb <= '1';
          when X"BF"  => port_bfxx_msb <= '1';
-         when X"FE"  => port_fexx_msb <= '1';
          when X"FF"  => port_ffxx_msb <= '1';
          when others => null;
       
@@ -2139,7 +2464,6 @@ begin
    process (cpu_a(7 downto 0))
    begin
    
-      port_00_lsb <= '0';
       port_08_lsb <= '0';
       port_0b_lsb <= '0';
       port_0f_lsb <= '0';
@@ -2154,9 +2478,11 @@ begin
       port_5f_lsb <= '0';
       port_62_lsb <= '0';
       port_66_lsb <= '0';
+      port_6a_lsb <= '0';
       port_6b_lsb <= '0';
       port_b3_lsb <= '0';
       port_c6_lsb <= '0';
+      port_d7_lsb <= '0';
       port_df_lsb <= '0';
       port_e3_lsb <= '0';
       port_e7_lsb <= '0';
@@ -2170,7 +2496,6 @@ begin
    
       case cpu_a(7 downto 0) is
    
-         when X"00"  => port_00_lsb <= '1';
          when X"08"  => port_08_lsb <= '1';
          when X"0B"  => port_0b_lsb <= '1';
          when X"0F"  => port_0f_lsb <= '1';
@@ -2185,9 +2510,11 @@ begin
          when X"3B"  => port_3b_lsb <= '1';
          when X"62"  => port_62_lsb <= '1';
          when X"66"  => port_66_lsb <= '1';
+         when X"6A"  => port_6a_lsb <= '1';
          when X"6B"  => port_6b_lsb <= '1';
          when X"B3"  => port_b3_lsb <= '1';
          when X"C6"  => port_c6_lsb <= '1';
+         when X"D7"  => port_d7_lsb <= '1';
          when X"DF"  => port_df_lsb <= '1';
          when X"E3"  => port_e3_lsb <= '1';
          when X"E7"  => port_e7_lsb <= '1';
@@ -2215,21 +2542,20 @@ begin
    
    -- +3 floating bus
    
--- port_p3_float_active <= '1' when cpu_a(15 downto 12) = "0000" and port_fd = '1' and p3_timing_hw_en = '1' else '0';
--- port_p3_float <= '1' when port_p3_float_active = '1' and port_p3_floating_bus_io_en = '1' else '0';
    port_p3_float <= '1' when cpu_a(15 downto 12) = "0000" and port_fd = '1' and p3_timing_hw_en = '1' and port_p3_floating_bus_io_en = '1' else '0';
    
    -- original spectrum banking
 
-   port_7ffd_assert <= '1' when cpu_a(15) = '0' and (cpu_a(14) = '1' or p3_timing_hw_en = '0') and port_fd = '1' and port_1ffd = '0' else '0';
-   port_7ffd_active <= '1' when port_7ffd_assert = '1' and (s128_timing_hw_en = '1' or p3_timing_hw_en = '1') else '0';
-   port_7ffd <= '1' when port_7ffd_assert = '1' and port_7ffd_io_en = '1' else '0';
+   port_7ffd <= '1' when cpu_a(15) = '0' and (cpu_a(14) = '1' or p3_timing_hw_en = '0') and port_fd = '1' and port_1ffd = '0' and port_7ffd_io_en = '1' else '0';
+   port_7ffd_active <= '1' when port_7ffd = '1' and (s128_timing_hw_en = '1' or p3_timing_hw_en = '1') else '0';
    
    port_dffd <= '1' when cpu_a(15 downto 12) = "1101" and port_fd = '1' and port_dffd_io_en = '1' else '0';
 
-   port_1ffd_assert <= '1' when cpu_a(15 downto 12) = "0001" and port_fd = '1' else '0';
--- port_1ffd_active <= '1' when port_1ffd_assert = '1' and p3_timing_hw_en = '1' else '0';
-   port_1ffd <= '1' when port_1ffd_assert = '1' and port_1ffd_io_en = '1' else '0';
+   port_xffd <= '1' when cpu_a(15 downto 14) = "00" and port_fd = '1' else '0';
+   port_1ffd <= '1' when cpu_a(13 downto 12) = "01" and port_xffd = '1' and port_1ffd_io_en = '1' else '0';
+-- port_1ffd_active <= '1' when port_1ffd = '1' and p3_timing_hw_en = '1' else '0';
+   port_2ffd <= '1' when cpu_a(13 downto 12) = "10" and port_xffd = '1' and nr_d8_io_trap_fdc_en = '1' else '0';
+   port_3ffd <= '1' when cpu_a(13 downto 12) = "11" and port_xffd = '1' and nr_d8_io_trap_fdc_en = '1' else '0';
    
    port_eff7 <= '1' when cpu_a(15 downto 12) = "1110" and port_f7_lsb = '1' and port_eff7_io_en = '1' else '0';
    
@@ -2266,9 +2592,7 @@ begin
    
    -- uart
    
-   port_133b <= '1' when port_13xx_msb = '1' and port_3b_lsb = '1' and port_uart_io_en = '1' else '0';
-   port_143b <= '1' when port_14xx_msb = '1' and port_3b_lsb = '1' and port_uart_io_en = '1' else '0';
-   port_153b <= '1' when port_15xx_msb = '1' and port_3b_lsb = '1' and port_uart_io_en = '1' else '0';
+   port_uart <= '1' when cpu_a(15 downto 11) = "00010" and (cpu_a(10) xor (cpu_a(9) and cpu_a(8))) = '1' and port_3b_lsb = '1' and port_uart_io_en = '1' else '0';
    
    -- dma
    
@@ -2278,6 +2602,7 @@ begin
    
    port_fffd <= '1' when cpu_a(15 downto 14) = "11" and cpu_a(2) = '1' and port_fd = '1' and port_ay_io_en = '1' else '0';
    port_bffd <= '1' when cpu_a(15 downto 14) = "10" and cpu_a(2) = '1' and port_fd = '1' and port_ay_io_en = '1' else '0';
+   port_bff5 <= '1' when port_bffd = '1' and cpu_a(3) = '0' else '0';
    
    -- audio dac
    
@@ -2302,8 +2627,8 @@ begin
    
    -- joystick
    
-   port_1f <= '1' when port_1f_lsb = '1' and port_1f_io_en = '1' and port_1f_hw_en = '1' else '0';
-   port_37 <= '1' when port_37_lsb = '1' and port_37_io_en = '1' else '0';
+   port_1f <= '1' when (port_1f_lsb = '1' or (port_df_lsb = '1' and port_dac_mono_AD_df_io_en = '1' and port_mouse_io_en = '0')) and port_1f_io_en = '1' and port_1f_hw_en = '1' else '0';
+   port_37 <= '1' when port_37_lsb = '1' and port_37_io_en = '1' and port_37_hw_en = '1' else '0';
    
    -- sprites
    
@@ -2324,10 +2649,10 @@ begin
    
    -- check if xst handles this well
    
-   port_internal_response <= port_fe or port_ff or port_p3_float or port_7ffd or port_dffd or port_1ffd or port_eff7 or port_e3 or
-      port_mf_enable or port_mf_disable or port_e7 or port_eb or port_243b or port_253b or port_103b or port_113b or port_123b or port_133b or 
-      port_143b or port_153b or port_dma or port_fffd or port_bffd or port_dac_A or port_dac_B or port_dac_C or port_dac_D or
-      port_fadf or port_fbdf or port_ffdf or port_1f or port_37 or port_57 or port_5b or port_303b or port_bf3b or port_ff3b or port_ctc;
+   port_internal_response <= port_fe or port_ff or port_p3_float or port_7ffd or port_dffd or port_1ffd or port_2ffd or port_3ffd or port_eff7 or
+      port_e3 or port_mf_enable or port_mf_disable or port_e7 or port_eb or port_243b or port_253b or port_103b or port_113b or port_123b or port_uart or 
+      port_dma or port_fffd or port_bffd or port_dac_A or port_dac_B or port_dac_C or port_dac_D or port_fadf or port_fbdf or port_ffdf or 
+      port_1f or port_37 or port_57 or port_5b or port_303b or port_bf3b or port_ff3b or port_ctc;
    
    --
    -- complete port decode with iorq, rd, wr, m1
@@ -2351,6 +2676,10 @@ begin
    port_1ffd_wr <= iowr and port_1ffd and not port_fd_conflict_wr;
    port_eff7_wr <= iowr and port_eff7;
    
+   port_2ffd_rd <= iord and port_2ffd;
+   port_3ffd_rd <= iord and port_3ffd;
+   port_3ffd_wr <= iowr and port_3ffd and not port_fd_conflict_wr;
+   
    port_e3_rd <= iord and port_e3;
    port_e3_wr <= iowr and port_e3;
    
@@ -2367,6 +2696,19 @@ begin
    port_243b_wr <= iowr and port_243b;
    port_253b_rd <= iord and port_253b;
    port_253b_wr <= iowr and port_253b;
+   
+   process (i_CLK_28)
+   begin
+      if rising_edge(i_CLK_28) then
+         if reset = '1' then
+            port_253b_rd_qq <= "00";
+         else
+            port_253b_rd_qq <= port_253b_rd_qq(0) & port_253b_rd;
+         end if;
+      end if;
+   end process;
+   
+   port_253b_rd_fe <= port_253b_rd_qq(1) and not port_253b_rd_qq(0);
 
    port_103b_rd <= iord and port_103b;
    port_103b_wr <= iowr and port_103b;
@@ -2376,17 +2718,13 @@ begin
    port_123b_rd <= iord and port_123b;
    port_123b_wr <= iowr and port_123b;
    
-   port_133b_rd <= iord and port_133b;
-   port_133b_wr <= iowr and port_133b;
-   port_143b_rd <= iord and port_143b;
-   port_143b_wr <= iowr and port_143b;
-   port_153b_rd <= iord and port_153b;
-   port_153b_wr <= iowr and port_153b;
+   port_uart_rd <= iord and port_uart;
+   port_uart_wr <= iowr and port_uart;
    
    port_dma_rd <= iord and port_dma and not dma_holds_bus;
    port_dma_wr <= iowr and port_dma and not dma_holds_bus;
    
-   port_fffd_rd <= iord and (port_fffd or (port_bffd and machine_timing_p3));   -- bffd is readable equivalent to fffd on +3
+   port_fffd_rd <= iord and (port_fffd or (port_bffd and machine_timing_p3) or port_bff5);   -- bffd is readable equivalent to fffd on +3
    port_fffd_wr <= iowr and port_fffd and not port_dffd;
    port_bffd_wr <= iowr and port_bffd;
 
@@ -2400,8 +2738,7 @@ begin
    port_ffdf_rd <= iord and port_ffdf;
    
    port_1f_rd <= iord and port_1f;
-   port_37_rd <= iord and port_37 and port_37_hw_en;
-   port_37_wr <= iowr and port_37;
+   port_37_rd <= iord and port_37;
    
    port_57_wr <= iowr and port_57;
    port_5b_wr <= iowr and port_5b;
@@ -2420,9 +2757,9 @@ begin
    -- check if xst handles this well
    
    port_internal_rd_response <= port_fe_rd or port_ff_rd or port_p3_float_rd or port_e3_rd or mf_port_en or 
-      port_eb_rd or port_243b_rd or port_253b_rd or port_103b_rd or port_113b_rd or port_123b_rd or port_133b_rd or
-      port_143b_rd or port_153b_rd or port_dma_rd or port_fffd_rd or port_fadf_rd or port_fbdf_rd or port_ffdf_rd or
-      port_1f_rd or port_37_rd or port_303b_rd or port_ff3b_rd or port_ctc_rd;
+      port_eb_rd or port_243b_rd or port_253b_rd or port_103b_rd or port_113b_rd or port_123b_rd or port_uart_rd or
+      port_dma_rd or port_fffd_rd or port_fadf_rd or port_fbdf_rd or port_ffdf_rd or port_1f_rd or port_37_rd or 
+      port_303b_rd or port_ff3b_rd or port_ctc_rd;
    
    --
    -- Use wired-or logic to avoid expensive if-elsif-endif chain
@@ -2439,9 +2776,7 @@ begin
    port_103b_rd_dat <= port_103b_dat when port_103b_rd = '1' else X"00";
    port_113b_rd_dat <= port_113b_dat when port_113b_rd = '1' else X"00";
    port_123b_rd_dat <= port_123b_dat when port_123b_rd = '1' else X"00";
-   port_133b_rd_dat <= port_133b_dat when port_133b_rd = '1' else X"00";
-   port_143b_rd_dat <= port_143b_dat when port_143b_rd = '1' else X"00";
-   port_153b_rd_dat <= port_153b_dat when port_153b_rd = '1' else X"00";
+   port_uart_rd_dat <= port_uart_dat when port_uart_rd = '1' else X"00";
    port_dma_rd_dat <= port_dma_dat when port_dma_rd = '1' else X"00";
    port_fffd_rd_dat <= port_fffd_dat when port_fffd_rd = '1' else X"00";
    port_fadf_rd_dat <= port_fadf_dat when port_fadf_rd = '1' else X"00";
@@ -2456,9 +2791,9 @@ begin
    -- check if xst handles this well
    
    port_rd_dat <= port_fe_rd_dat or port_ff_rd_dat or port_p3_float_rd_dat or port_e3_rd_dat or port_mf_rd_dat or 
-      port_eb_rd_dat or port_243b_rd_dat or port_253b_rd_dat or port_103b_rd_dat or port_113b_rd_dat or port_123b_rd_dat or port_133b_rd_dat or
-      port_143b_rd_dat or port_153b_rd_dat or port_dma_rd_dat or port_fffd_rd_dat or port_fadf_rd_dat or port_fbdf_rd_dat or
-      port_ffdf_rd_dat or port_1f_rd_dat or port_37_rd_dat or port_303b_rd_dat or port_ff3b_rd_dat or port_ctc_rd_dat;
+      port_eb_rd_dat or port_243b_rd_dat or port_253b_rd_dat or port_103b_rd_dat or port_113b_rd_dat or port_123b_rd_dat or port_uart_rd_dat or
+      port_dma_rd_dat or port_fffd_rd_dat or port_fadf_rd_dat or port_fbdf_rd_dat or port_ffdf_rd_dat or port_1f_rd_dat or port_37_rd_dat or 
+      port_303b_rd_dat or port_ff3b_rd_dat or port_ctc_rd_dat;
    
    ------------------------------------------------------------
    -- MEMORY ADDRESSES ----------------------------------------
@@ -2466,22 +2801,77 @@ begin
 
    -- divmmc
    
-   divmmc_automap_en_instant <= port_3dxx_msb;
-   divmmc_automap_en_delayed <= (port_00xx_msb and port_08_lsb) or (port_00xx_msb and port_38_lsb) or (port_04xx_msb and port_c6_lsb) or (port_05xx_msb and port_62_lsb);
-   divmmc_automap_en_delayed_nohide <= port_00xx_msb and port_00_lsb;
-   divmmc_automap_en_delayed_nohide_nmi <= port_00xx_msb and port_66_lsb;
-   divmmc_automap_dis_delayed <= '1' when port_1fxx_msb = '1' and cpu_a(7 downto 3) = "11111" else '0';
+   process (port_00xx_msb, cpu_a, nr_b8_divmmc_ep_0, nr_b9_divmmc_ep_valid_0, nr_ba_divmmc_ep_timing_0)
+   begin
+      if port_00xx_msb = '1' and cpu_a(7 downto 6) = "00" and cpu_a(2 downto 0) = "000" then
+         case cpu_a(5 downto 3) is
+            when "000" =>
+               divmmc_rst_ep <= nr_b8_divmmc_ep_0(0);
+               divmmc_rst_ep_valid <= nr_b9_divmmc_ep_valid_0(0);
+               divmmc_rst_ep_timing <= nr_ba_divmmc_ep_timing_0(0);
+            when "001" =>
+               divmmc_rst_ep <= nr_b8_divmmc_ep_0(1);
+               divmmc_rst_ep_valid <= nr_b9_divmmc_ep_valid_0(1);
+               divmmc_rst_ep_timing <= nr_ba_divmmc_ep_timing_0(1);
+            when "010" =>
+               divmmc_rst_ep <= nr_b8_divmmc_ep_0(2);
+               divmmc_rst_ep_valid <= nr_b9_divmmc_ep_valid_0(2);
+               divmmc_rst_ep_timing <= nr_ba_divmmc_ep_timing_0(2);
+            when "011" =>
+               divmmc_rst_ep <= nr_b8_divmmc_ep_0(3);
+               divmmc_rst_ep_valid <= nr_b9_divmmc_ep_valid_0(3);
+               divmmc_rst_ep_timing <= nr_ba_divmmc_ep_timing_0(3);
+            when "100" =>
+               divmmc_rst_ep <= nr_b8_divmmc_ep_0(4);
+               divmmc_rst_ep_valid <= nr_b9_divmmc_ep_valid_0(4);
+               divmmc_rst_ep_timing <= nr_ba_divmmc_ep_timing_0(4);
+            when "101" =>
+               divmmc_rst_ep <= nr_b8_divmmc_ep_0(5);
+               divmmc_rst_ep_valid <= nr_b9_divmmc_ep_valid_0(5);
+               divmmc_rst_ep_timing <= nr_ba_divmmc_ep_timing_0(5);
+            when "110" =>
+               divmmc_rst_ep <= nr_b8_divmmc_ep_0(6);
+               divmmc_rst_ep_valid <= nr_b9_divmmc_ep_valid_0(6);
+               divmmc_rst_ep_timing <= nr_ba_divmmc_ep_timing_0(6);
+            when others =>
+               divmmc_rst_ep <= nr_b8_divmmc_ep_0(7);
+               divmmc_rst_ep_valid <= nr_b9_divmmc_ep_valid_0(7);
+               divmmc_rst_ep_timing <= nr_ba_divmmc_ep_timing_0(7);
+         end case;
+      else
+         divmmc_rst_ep <= '0';
+         divmmc_rst_ep_valid <= '0';
+         divmmc_rst_ep_timing <= '0';
+      end if;
+   end process;
+   
+   divmmc_automap_instant_on <= divmmc_rst_ep and divmmc_rst_ep_valid and divmmc_rst_ep_timing;
+   
+   divmmc_automap_delayed_on <= divmmc_rst_ep and divmmc_rst_ep_valid and not divmmc_rst_ep_timing;
+   
+   divmmc_automap_delayed_off <= '1' when port_1fxx_msb = '1' and cpu_a(7 downto 3) = "11111" and nr_bb_divmmc_ep_1(6) = '1' else '0';
+   
+   divmmc_automap_rom3_instant_on <= (divmmc_rst_ep and (not divmmc_rst_ep_valid) and divmmc_rst_ep_timing) or
+      (port_3dxx_msb and nr_bb_divmmc_ep_1(7));
+   
+   divmmc_automap_rom3_delayed_on <= (divmmc_rst_ep and (not divmmc_rst_ep_valid) and not divmmc_rst_ep_timing) or
+      (port_04xx_msb and port_c6_lsb and nr_bb_divmmc_ep_1(2)) or
+      (port_05xx_msb and port_62_lsb and nr_bb_divmmc_ep_1(3)) or
+      (port_04xx_msb and port_d7_lsb and nr_bb_divmmc_ep_1(4)) or
+      (port_05xx_msb and port_6a_lsb and nr_bb_divmmc_ep_1(5));
+      
+   divmmc_automap_nmi_instant_on <= port_00xx_msb and port_66_lsb and nr_bb_divmmc_ep_1(1);
+   divmmc_automap_nmi_delayed_on <= port_00xx_msb and port_66_lsb and nr_bb_divmmc_ep_1(0);
    
    -- multiface
    
    mf_a_0066 <= port_00xx_msb and port_66_lsb;
-   mf_a_1fxx <= port_1fxx_msb;
-   mf_a_7fxx <= port_7fxx_msb;
-   mf_a_fexx <= port_fexx_msb;
 
    ------------------------------------------------------------
    -- MEMORY DECODING -----------------------------------------
    ------------------------------------------------------------
+
+   -- This is going to be a bit of a mind bender ...
 
    -- 0x000000 - 0x00FFFF (64K)  => ZX Spectrum ROM         A20:A16 = 00000
    -- 0x010000 - 0x011FFF ( 8K)  => divMMC ROM              A20:A16 = 00001,000
@@ -2499,14 +2889,14 @@ begin
    -- memory decode order
    --
    -- 0-16k:
-   --   1. bootrom
-   --   2. machine config mapping
-   --   3. multiface
-   --   4. divmmc
-   --   5. layer 2 mapping
-   --   6. mmu
-   --   7. romcs expansion bus
-   --   8. rom
+   --   0. bootrom
+   --   1. multiface
+   --   2. divmmc
+   --   3. layer 2 mapping
+   --   4. mmu
+   --   5. config
+   --   6. romcs expansion bus
+   --   7. rom
    --
    -- 16k-48k:
    --   1. layer 2 mapping
@@ -2524,173 +2914,168 @@ begin
                       MMU6 when cpu_a(15 downto 13) = "110" else
                       MMU7;
 
+   mem_active_bank5 <= '1' when mem_active_page = X"0A" or mem_active_page = X"0B" else '0';
+   mem_active_bank7 <= '1' when mem_active_page = X"0E" else '0';
+   
+   mmu_A21_A13 <= ("0001" + ('0' & mem_active_page(7 downto 5))) & mem_active_page(4 downto 0);
+
    layer2_active_bank_offset_pre <= cpu_a(15 downto 14) when port_123b_layer2_map_segment = "11" else port_123b_layer2_map_segment;
    layer2_active_bank_offset <= ("00" & layer2_active_bank_offset_pre) + ('0' & port_123b_layer2_offset);
    layer2_active_bank <= nr_12_layer2_active_bank when port_123b_layer2_map_shadow = '0' else nr_13_layer2_shadow_bank;
    layer2_active_page <= (('0' & layer2_active_bank) + ("0000" & layer2_active_bank_offset)) & cpu_a(13);
+   
+   layer2_A21_A13 <= ("0001" + ('0' & layer2_active_page(7 downto 5))) & layer2_active_page(4 downto 0);
 
    -- note that the copper can change mmu and the layer 2 base bank so these must be frozen during a memory access
-   
+
    --
    -- early memory decode before assertion of mreq where possible
    --
 
-   sram_config_active <= '1' when bootrom_en = '1' or machine_type_config = '1' else '0';
-
-   mmu_A21_A13 <= ("0001" + ('0' & mem_active_page(7 downto 5))) & mem_active_page(4 downto 0);
-   layer2_A21_A13 <= ("0001" + ('0' & layer2_active_page(7 downto 5))) & layer2_active_page(4 downto 0);
-   
-   mem_active_bank5 <= '1' when mem_active_page = X"0A" or mem_active_page = X"0B" else '0';
-   mem_active_bank7 <= '1' when mem_active_page = X"0E" else '0';
+   -- rom address computation
 
    process (machine_type_48, machine_type_p3, nr_8c_altrom_lock_rom1, nr_8c_altrom_lock_rom0, port_1ffd_rom)
    begin
       if machine_type_48 = '1' then
-         sram_active_rom <= "00";
+         sram_rom <= "00";
          sram_rom3 <= '1';
-         sram_alt_128 <= (not nr_8c_altrom_lock_rom1) and nr_8c_altrom_lock_rom0;
+         sram_alt_128_n <= not ((not nr_8c_altrom_lock_rom1) and nr_8c_altrom_lock_rom0);
       elsif machine_type_p3 = '1' then
          if nr_8c_altrom_lock_rom1 = '1' or nr_8c_altrom_lock_rom0 = '1' then
-            sram_active_rom <= nr_8c_altrom_lock_rom1 & nr_8c_altrom_lock_rom0;
+            sram_rom <= nr_8c_altrom_lock_rom1 & nr_8c_altrom_lock_rom0;
             sram_rom3 <= nr_8c_altrom_lock_rom1 and nr_8c_altrom_lock_rom0;
-            sram_alt_128 <= not nr_8c_altrom_lock_rom1;
+            sram_alt_128_n <= nr_8c_altrom_lock_rom1;
          else
-            sram_active_rom <= port_1ffd_rom;
+            sram_rom <= port_1ffd_rom;
             sram_rom3 <= port_1ffd_rom(1) and port_1ffd_rom(0);
-            sram_alt_128 <= not port_1ffd_rom(0);   -- behave like a 128k machine
+            sram_alt_128_n <= port_1ffd_rom(0);   -- behave like a 128k machine
          end if;
       else
          if nr_8c_altrom_lock_rom1 = '1' or nr_8c_altrom_lock_rom0 = '1' then
-            sram_active_rom <= '0' & nr_8c_altrom_lock_rom1;
+            sram_rom <= '0' & nr_8c_altrom_lock_rom1;
             sram_rom3 <= nr_8c_altrom_lock_rom1;
-            sram_alt_128 <= not nr_8c_altrom_lock_rom1;
+            sram_alt_128_n <= nr_8c_altrom_lock_rom1;
          else
-            sram_active_rom <= '0' & port_1ffd_rom(0);
+            sram_rom <= '0' & port_1ffd_rom(0);
             sram_rom3 <= port_1ffd_rom(0);
-            sram_alt_128 <= not port_1ffd_rom(0);
+            sram_alt_128_n <= port_1ffd_rom(0);
          end if;
       end if;
    end process;
+
+   -- early decode sram address computation and freeze parameters
 
    process (i_CLK_28)
    begin
       if falling_edge(i_CLK_28) then
+
          if cpu_mreq_n = '1' then
          
-            layer2_pre_A21_A13 <= layer2_A21_A13;
-            eff_bootrom_en <= bootrom_en;
-            eff_expbus_romcs_replace <= expbus_romcs_replace;
-            sram_pre_alt_128 <= sram_alt_128;
-            port_123b_layer2_map_rd_pre <= port_123b_layer2_map_rd_en;
-            port_123b_layer2_map_wr_pre <= port_123b_layer2_map_wr_en;
-            port_123b_layer2_map_segment_pre <= port_123b_layer2_map_segment;
-            
-            sram_pre_active <= '0';
-            sram_pre_bank5 <= '0';
-            sram_pre_bank7 <= '0';
-            sram_pre_rdonly <= '0';
-            sram_pre_romcs <= '0';
-            sram_pre_alt_en <= '0';
-            sram_pre_rom3 <= '0';
+            sram_pre_romcs_replace <= expbus_romcs_replace;
+         
+            sram_pre_alt_en <= nr_8c_altrom_en;
+            sram_pre_alt_128_n <= sram_alt_128_n;
+            sram_pre_rom3 <= sram_rom3;
+         
+            sram_pre_layer2_rd_en <= port_123b_layer2_map_rd_en;
+            sram_pre_layer2_wr_en <= port_123b_layer2_map_wr_en;
+            sram_pre_layer2_A21_A13 <= layer2_A21_A13;
 
             if cpu_a(15 downto 14) = "00" then
-               if sram_config_active = '1' then
-                  sram_pre_A20_A13 <= nr_04_romram_bank & cpu_a(13);
-                  sram_pre_active <= not bootrom_en;
+               if mf_mem_en = '1' then
+                  sram_pre_A20_A13 <= "0000101" & cpu_a(13);
+                  sram_pre_active <= '1';
+                  sram_pre_bank5 <= '0';
+                  sram_pre_bank7 <= '0';
+                  sram_pre_rdonly <= not cpu_a(13);
+                  sram_pre_override <= "000";   -- divmmc & layer 2 & romcs
                elsif mmu_A21_A13(8) = '0' then
                   sram_pre_A20_A13 <= mmu_A21_A13(7 downto 0);
-                  sram_pre_active <= not (mem_active_bank5 or mem_active_bank7);
+                  sram_pre_active <= (not mem_active_bank5) and (not mem_active_bank7);
                   sram_pre_bank5 <= mem_active_bank5;
                   sram_pre_bank7 <= mem_active_bank7;
-               else
-                  sram_pre_A20_A13 <= "00000" & sram_active_rom & cpu_a(13);
+                  sram_pre_rdonly <= '0';
+                  sram_pre_override <= "110";   -- divmmc & layer 2 & romcs
+               elsif nr_03_config_mode = '1' then
+                  sram_pre_A20_A13 <= nr_04_romram_bank & cpu_a(13);
                   sram_pre_active <= '1';
+                  sram_pre_bank5 <= '0';
+                  sram_pre_bank7 <= '0';
+                  sram_pre_rdonly <= '0';
+                  sram_pre_override <= "110";   -- divmmc & layer 2 & romcs
+               else
+                  sram_pre_A20_A13 <= "00000" & sram_rom & cpu_a(13);
+                  sram_pre_active <= '1';
+                  sram_pre_bank5 <= '0';
+                  sram_pre_bank7 <= '0';
                   sram_pre_rdonly <= not (nr_8c_altrom_en and nr_8c_altrom_rw);
-                  sram_pre_romcs <= not expbus_eff_disable_mem;
-                  sram_pre_alt_en <= nr_8c_altrom_en;
-                  sram_pre_rom3 <= sram_rom3;
+                  sram_pre_override <= "111";   -- divmmc & layer 2 & romcs
                end if;
-            elsif mmu_A21_A13(8) = '0' then
+            else
                sram_pre_A20_A13 <= mmu_A21_A13(7 downto 0);
-               sram_pre_active <= not (mem_active_bank5 or mem_active_bank7);
+               sram_pre_active <= (not mmu_A21_A13(8)) and (not mem_active_bank5) and (not mem_active_bank7);
                sram_pre_bank5 <= mem_active_bank5;
                sram_pre_bank7 <= mem_active_bank7;
+               sram_pre_rdonly <= '0';
+               sram_pre_override <= '0' & (((not cpu_a(15)) or (not cpu_a(14))) and port_123b_layer2_map_segment(1) and port_123b_layer2_map_segment(0)) & '0';   -- divmmc & layer 2 & romcs
             end if;
+            
          end if;
+         
       end if;
    end process;
-   
+
    --
    -- finish memory decode after mreq is asserted
    --
    
-   layer2_map_en <= (port_123b_layer2_map_wr_pre and cpu_rd_n) or (port_123b_layer2_map_rd_pre and not cpu_rd_n);
-   altrom_en <= '0' when (sram_pre_alt_en = '0') or (sram_pre_rdonly = '1' and cpu_wr_n = '0') or (sram_pre_rdonly = '0' and cpu_rd_n = '0') else '1';
-
-   process (cpu_a, sram_config_active, sram_pre_A20_A13, sram_pre_active, mf_mem_en, divmmc_rom_en, divmmc_ram_en, divmmc_bank, altrom_en, sram_pre_alt_128, sram_romcs,
-            divmmc_rdonly, layer2_map_en, layer2_pre_A21_A13, sram_pre_bank5, sram_pre_bank7, sram_pre_rdonly, sram_pre_romcs, port_123b_layer2_map_segment_pre)
+   sram_layer2_map_en <= sram_pre_override(1) and ((sram_pre_layer2_wr_en and cpu_rd_n) or (sram_pre_layer2_rd_en and not cpu_rd_n));
+   sram_altrom_en <= '0' when (sram_pre_override(0) = '0') or (sram_pre_alt_en = '0') or (sram_pre_rdonly = '1' and cpu_rd_n = '1') or (sram_pre_rdonly = '0' and cpu_rd_n = '0') else '1';
+   sram_romcs <= sram_pre_override(0) and sram_pre_romcs_n;
+   
+   process (sram_pre_override, divmmc_rom_en, divmmc_ram_en, divmmc_bank, divmmc_rdonly, sram_layer2_map_en, sram_pre_layer2_A21_A13,
+            sram_romcs, sram_pre_A20_A13, sram_altrom_en, sram_pre_alt_128_n, sram_pre_rdonly, sram_pre_active, sram_pre_bank5, sram_pre_bank7)
    begin
-      if cpu_a(15 downto 14) = "00" then
-         if sram_config_active = '1' then
-            sram_A20_A13 <= sram_pre_A20_A13;
-            sram_active <= sram_pre_active;
-            sram_bank5 <= '0';
-            sram_bank7 <= '0';
-            sram_rdonly <= '0';
-            sram_romcs_en <= '0';
-         elsif mf_mem_en = '1' then
-            sram_A20_A13 <= "0000101" & cpu_a(13);
-            sram_active <= '1';
-            sram_bank5 <= '0';
-            sram_bank7 <= '0';
-            sram_rdonly <= not cpu_a(13);
-            sram_romcs_en <= '0';
-         elsif divmmc_rom_en = '1' then
-            sram_A20_A13 <= "00001000";
-            sram_active <= '1';
-            sram_bank5 <= '0';
-            sram_bank7 <= '0';
-            sram_rdonly <= '1';
-            sram_romcs_en <= '0';
-         elsif divmmc_ram_en = '1' then
-            sram_A20_A13 <= "0001" & divmmc_bank;
-            sram_active <= '1';
-            sram_bank5 <= '0';
-            sram_bank7 <= '0';
-            sram_rdonly <= divmmc_rdonly;
-            sram_romcs_en <= '0';
-         elsif layer2_map_en = '1' then
-            sram_A20_A13 <= layer2_pre_A21_A13(7 downto 0);
-            sram_active <= not layer2_pre_A21_A13(8);
-            sram_bank5 <= '0';
-            sram_bank7 <= '0';
-            sram_rdonly <= '0';
-            sram_romcs_en <= '0';
-         else
-            if sram_romcs = '1' then
-               sram_A20_A13 <= "0001111" & cpu_a(13);    -- divmmc banks 14 and 15
-            else
-               sram_A20_A13(7 downto 4) <= sram_pre_A20_A13(7 downto 4);
-               sram_A20_A13(0) <= sram_pre_A20_A13(0);
-               if altrom_en = '0' then
-                  sram_A20_A13(3 downto 1) <= sram_pre_A20_A13(3 downto 1);
-               else
-                  sram_A20_A13(3 downto 1) <= "11" & not sram_pre_alt_128;
-               end if;
-            end if;
-            sram_active <= sram_pre_active;
-            sram_bank5 <= sram_pre_bank5;
-            sram_bank7 <= sram_pre_bank7;
-            sram_rdonly <= sram_pre_rdonly or sram_romcs;
-            sram_romcs_en <= sram_pre_romcs;
-         end if;
-      elsif cpu_a(15 downto 14) /= "11" and layer2_map_en = '1' and port_123b_layer2_map_segment_pre = "11" then
-         sram_A20_A13 <= layer2_pre_A21_A13(7 downto 0);
-         sram_active <= not layer2_pre_A21_A13(8);
+      if sram_pre_override(2) = '1' and divmmc_rom_en = '1' then
+         sram_A20_A13 <= "00001000";
+         sram_active <= '1';
+         sram_bank5 <= '0';
+         sram_bank7 <= '0';
+         sram_rdonly <= '1';
+         sram_romcs_en <= '0';
+         sram_mem_hide_n <= '0';
+      elsif sram_pre_override(2) = '1' and divmmc_ram_en = '1' then
+         sram_A20_A13 <= "0001" & divmmc_bank;
+         sram_active <= '1';
+         sram_bank5 <= '0';
+         sram_bank7 <= '0';
+         sram_rdonly <= divmmc_rdonly;
+         sram_romcs_en <= '0';
+         sram_mem_hide_n <= '0';
+      elsif sram_layer2_map_en = '1' then
+         sram_A20_A13 <= sram_pre_layer2_A21_A13(7 downto 0);
+         sram_active <= not sram_pre_layer2_A21_A13(8);
          sram_bank5 <= '0';
          sram_bank7 <= '0';
          sram_rdonly <= '0';
          sram_romcs_en <= '0';
+         sram_mem_hide_n <= '0';
+      elsif sram_romcs = '1' then
+         sram_A20_A13 <= "0001111" & sram_pre_A20_A13(0);    -- divmmc banks 14 and 15
+         sram_active <= '1';
+         sram_bank5 <= '0';
+         sram_bank7 <= '0';
+         sram_rdonly <= '1';
+         sram_romcs_en <= '1';   -- expbus romcs override
+         sram_mem_hide_n <= '1';
+      elsif sram_altrom_en = '1' then
+         sram_A20_A13 <= "000011" & sram_pre_alt_128_n & sram_pre_A20_A13(0);
+         sram_active <= '1';
+         sram_bank5 <= '0';
+         sram_bank7 <= '0';
+         sram_rdonly <= sram_pre_rdonly;
+         sram_romcs_en <= '0';
+         sram_mem_hide_n <= '1';
       else
          sram_A20_A13 <= sram_pre_A20_A13;
          sram_active <= sram_pre_active;
@@ -2698,85 +3083,88 @@ begin
          sram_bank7 <= sram_pre_bank7;
          sram_rdonly <= sram_pre_rdonly;
          sram_romcs_en <= '0';
+         sram_mem_hide_n <= sram_pre_override(0);
       end if;
    end process;
    
-   sram_obscure_divmmc_automap <= sram_config_active or mf_mem_en;
-   sram_disable_divmmc_automap <= sram_obscure_divmmc_automap or ((not divmmc_automap_held) and (layer2_map_en or sram_romcs or (altrom_en and sram_pre_alt_128) or ((not altrom_en) and not sram_pre_rom3)));
+   -- divmmc automap disabled for most entry points if rom3 is not present
    
+   sram_divmmc_automap_en <= sram_pre_override(2);
+   sram_divmmc_automap_rom3_en <= memcycle_complete and sram_pre_override(2) and sram_pre_override(0) and (not sram_layer2_map_en) and (not sram_romcs) and ((sram_altrom_en and sram_pre_alt_128_n) or (sram_pre_rom3 and not sram_altrom_en));
+
    --
-   -- generate memory cycle in top level sram, bram banks 5/7, bootrom
+   -- generate memory cycle
    --
    
-   memcycle <= '1' when cpu_mreq_n = '0' and cpu_rfsh_n = '1' else '0';
+   sram_memcycle <= '1' when cpu_mreq_n = '0' and cpu_rfsh_n = '1' and memcycle_complete = '1' else '0';
    
-   -- must extend memory cycle for romcs from expansion bus with amount of extension dependent on cpu speed
+   -- memory cycle may go to expansion bus if the lower 16K is accessed and romcs is active
+   -- memory read of internal memory is harmless with cpu_di taken from internal memory or expansion bus depending on romcs at the end of the read cycle
+   -- memory write is potentially harmful however a write cycle gives much more time for romcs to be asserted so is fine to act on when /wr goes low
+
+   -- memory cycle is delayed to allow time for romcs from slow devices (divmmc)
+
+   memcycle_complete <= '1' when memcycle_count = memcycle_count_max else '0';
    
-   process (i_CLK_28)
+   process (i_CLK_28_n)
    begin
-      if rising_edge(i_CLK_28) then
-         if cpu_mreq_n = '1' and cpu_iorq_n = '1' then
-            memcycle_delay <= (others => '0');
-         elsif memcycle_delay_complete = '0' then
-            memcycle_delay <= memcycle_delay + 1;
-         end if;
-      end if;
-   end process;
-   
-   process (cpu_mreq_n, cpu_speed)
-   begin
-      if cpu_mreq_n = '0' then
-         if cpu_speed = "00" then
-            memcycle_delay_end <= "1001";
-         else
-            memcycle_delay_end <= "0011";
-         end if;
-      else
-         if cpu_speed = "00" then
-            memcycle_delay_end <= "1111";
-         else
-            memcycle_delay_end <= "0110";
-         end if;
-      end if;
-   end process;
-   
-   memcycle_delay_complete <= '1' when cpu_speed = "11" or cpu_speed = "10" or expbus_eff_en = '0' or sram_romcs_en = '0' or memcycle_delay = memcycle_delay_end else '0';
-   
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
+--    if falling_edge(i_CLK_28) then    -- xst bug: creates rising edge flip flop with clock passed through inverter which generates a synthesis error
+      if rising_edge(i_CLK_28_n) then   -- temporary fix but the builds aren't as good, see if it goes away later
          if cpu_mreq_n = '1' then
-            sram_romcs <= '0';
-         elsif memcycle_delay_complete = '0' then
-            sram_romcs <= expbus_eff_en and sram_romcs_en and i_BUS_ROMCS_n;
+            memcycle_count <= (others => '0');
+         elsif memcycle_complete = '0' then
+            memcycle_count <= memcycle_count + 1;
+         end if;
+      end if;
+   end process;
+
+   process (cpu_speed)
+   begin
+      case cpu_speed is
+         when "00"   =>
+            memcycle_count_max <= "111";   -- before wr goes low
+         when "01"   =>
+            memcycle_count_max <= "011";
+         when "10" =>
+            memcycle_count_max <= "001";
+         when others =>
+            memcycle_count_max <= (others => '0');
+      end case;
+   end process;
+   
+   process (i_CLK_28)
+   begin
+      if falling_edge(i_CLK_28) then
+         if cpu_mreq_n = '1' or memcycle_complete = '0' then
+            sram_pre_romcs_n <= i_BUS_ROMCS_n and expbus_eff_en and not expbus_eff_disable_mem;
          end if;
       end if;
    end process;
    
    -- memory signals
    
-   cpu_bank5_rd <= memcycle and memcycle_delay_complete and sram_bank5 and not cpu_rd_n;
-   cpu_bank5_we <= memcycle and memcycle_delay_complete and sram_bank5 and not cpu_wr_n;
-   cpu_bank7_we <= memcycle and memcycle_delay_complete and sram_bank7 and not cpu_wr_n;
-   
+   cpu_bank5_rd <= sram_memcycle and sram_bank5 and not cpu_rd_n;
+   cpu_bank5_we <= sram_memcycle and sram_bank5 and not cpu_wr_n;
+   cpu_bank7_we <= sram_memcycle and sram_bank7 and not cpu_wr_n;   
+
    sram_addr <= sram_A20_A13 & cpu_a(12 downto 0);
-   sram_rd <= not cpu_rd_n;
-   sram_req <= memcycle and memcycle_delay_complete and (eff_expbus_romcs_replace or not sram_romcs) and sram_active and ((not cpu_rd_n) or ((not sram_rdonly) and not cpu_wr_n));
-   
+   sram_rd_n <= cpu_rd_n;
+   sram_req <= sram_memcycle and sram_active and ((not cpu_rd_n) or ((not sram_rdonly) and not cpu_wr_n));
+
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
          if reset = '1' then
-            sram_req_dly <= '0';
+            sram_req_d <= '0';
          else
-            sram_req_dly <= sram_req;
+            sram_req_d <= sram_req;
          end if;
       end if;
    end process;
 
-   sram_req_t <= sram_req and not sram_req_dly;
+   sram_req_t <= sram_req and not sram_req_d;
    
-   -- wait states on instruction fetches at 28MHz
+   -- wait states on memory read cycles at 28MHz
    
    process (i_CLK_28)
    begin
@@ -2794,20 +3182,40 @@ begin
 --
 -- o_RAM_A_ADDR <= sram_addr;
 -- o_RAM_A_REQ <= sram_req_t;
--- o_RAM_A_RD <= sram_rd;
+-- o_RAM_A_RD_n <= sram_rd_n;
 -- o_RAM_A_DO <= cpu_do;
 
    --
    -- BOOT ROM
    --
+
+   gen_bootrom: if (g_machine_id /= X"FA") generate
    
-   bootrom_mod: entity work.bootrom
-   port map (
-      clk      => i_CLK_28,
-      addr     => cpu_a(12 downto 0),
-      data     => bootrom_do
-   );
+      -- ZX Spectum Next Core
    
+      bootrom_mod: entity work.bootrom
+      port map (
+         clk      => i_CLK_28,
+         addr     => cpu_a(12 downto 0),
+         data     => bootrom_do
+      );
+   
+   end generate;
+   
+   gen_bootrom_ab: if (g_machine_id = X"FA") generate
+
+      -- Anti-Brick Core
+      -- Slot 0 on Issue 2/3/4
+
+      bootrom_mod: entity work.bootrom_ab
+      port map (
+         clk      => i_CLK_28,
+         addr     => cpu_a(12 downto 0),
+         data     => bootrom_do
+      );
+   
+   end generate;
+
    ------------------------------------------------------------
    -- SERIAL COMMS --------------------------------------------
    ------------------------------------------------------------
@@ -2867,23 +3275,23 @@ begin
    spi_miso <= i_SPI_FLASH_MISO when spi_ss_flash_n = '0' else
                pi_spi0_miso     when spi_ss_rpi1_n = '0' or spi_ss_rpi0_n = '0' else
                i_SPI_SD_MISO    when spi_ss_sd1_n = '0' or spi_ss_sd0_n = '0' else '1';
-   
+
    spi_master_mod: entity work.spi_master
    port map (
-      clock_i        => i_CLK_CPU,
-      reset_i        => reset_hard,
+      i_CLK          => i_CLK_CPU,        -- twice the spi sck frequency
+      i_reset        => '0',              -- hard reset done through core load
       
-      spi_sck_o      => spi_sck,
-      spi_mosi_o     => spi_mosi,
-      spi_miso_i     => spi_miso,
+      i_spi_rd       => port_eb_rd,       -- i/o read from spi
+      i_spi_wr       => port_eb_wr,       -- i/o write to spi
       
-      spi_mosi_wr_i  => port_eb_wr,
-      spi_mosi_dat_i => cpu_do,
+      i_spi_mosi_dat => cpu_do,           -- data to write to spi (i/o write)
+      o_spi_miso_dat => port_eb_dat,      -- data read from spi (i/o read)
       
-      spi_miso_rd_i  => port_eb_rd,
-      spi_miso_dat_o => port_eb_dat,
+      o_spi_sck      => spi_sck,          -- must synchronize with rising edge of i_CLK externally (on way out from fpga)
+      o_spi_mosi     => spi_mosi,         -- must synchronize with rising edge of i_CLK externally (on way out from fpga)
+      i_spi_miso     => spi_miso,         -- must synchronize with rising edge of i_CLK externally (on way into fpga)
       
-      spi_wait_n_o   => spi_wait_n     -- wait signal for dma only
+      o_spi_wait_n   => spi_wait_n        -- wait signal for dma
    );
 
    -- slave select register
@@ -2905,7 +3313,7 @@ begin
                port_e7_reg <= X"FB";
             elsif cpu_do = X"F7" then
                port_e7_reg <= X"F7";
-            elsif cpu_do = X"7F" then
+            elsif cpu_do = X"7F" and ((nr_03_config_mode = '1') or (nr_02_reset_type(2) = '1')) then
                port_e7_reg <= X"7F";
             else
                port_e7_reg <= (others => '1');
@@ -2924,255 +3332,90 @@ begin
    -- UART x 2 (wifi, pi)
    --
    
-   -- todo: enforce minimum prescalar
-   -- todo: add cts/rts
-   
    -- multiplex uart with joystick connector
 
-   uart0_rx <= io_mode_uart_rx when io_mode_uart_en = '1' and io_mode_bit_0 = '0' else i_UART0_RX;
-   uart1_rx <= io_mode_uart_rx when io_mode_uart_en = '1' and io_mode_bit_0 = '1' else pi_uart_rx;
+   uart0_rx <= joy_uart_rx when joy_iomode_uart_en = '1' and nr_0b_joy_iomode_0 = '0' else i_UART0_RX;
+   uart1_rx <= joy_uart_rx when joy_iomode_uart_en = '1' and nr_0b_joy_iomode_0 = '1' else pi_uart_rx;
    
-   uart0_tx_esp <= '1' when io_mode_uart_en = '1' and io_mode_bit_0 = '0' else uart0_tx;
-   uart1_tx_pi <= '1' when io_mode_uart_en = '1' and io_mode_bit_0 = '1' else uart1_tx;
+   uart0_tx_esp <= '1' when joy_iomode_uart_en = '1' and nr_0b_joy_iomode_0 = '0' else uart0_tx;
+   uart1_tx_pi <= '1' when joy_iomode_uart_en = '1' and nr_0b_joy_iomode_0 = '1' else uart1_tx;
 
-   -- uart 0 8/1/N
+   uart0_tx_cts_n <= joy_uart_cts_n when joy_iomode_uart_en = '1' and nr_0b_joy_iomode_0 = '0' else i_UART0_CTS_n;
+   uart1_tx_cts_n <= joy_uart_cts_n when joy_iomode_uart_en = '1' and nr_0b_joy_iomode_0 = '1' else pi_uart_cts_n;
    
-   uart0_mod: entity work.uart
-   port map (
-      clock_i              => i_CLK_28,
-      reset_i              => reset_hard,
-      
-      uart_prescaler_i     => uart0_153b_prescalar_msb & uart0_143b_prescalar,
-      
-      TX_start_i           => port_133b_wr and not uart_153b_select,   -- 1 to start transmission
-      TX_byte_i            => cpu_do,                             -- byte to transmit
-      TX_active_o          => uart0_tx_busy,                      -- 1 during transmission
-      TX_out_o             => uart0_tx,                           -- Tx
-      TX_byte_finished_o   => open,                               -- when complete, 1 for one cycle
-      
-      RX_in_i              => uart0_rx,                           -- Rx
-      RX_byte_finished_o   => uart0_rx_avail,                     -- when complete, 1 for one cycle
-      RX_byte_o            => uart0_rx_byte                       -- incoming byte
-   );
+   esp_uart_rtr_n <= '1' when joy_iomode_uart_en = '1' and nr_0b_joy_iomode_0 = '0' else uart0_rx_rtr_n;
+   pi_uart_rtr_n <= '1' when joy_iomode_uart_en = '1' and nr_0b_joy_iomode_0 = '1' else uart1_rx_rtr_n;
 
-   fifop_uart0_rx: entity work.fifop
-   generic map (
-      DEPTH_BITS  => 9
-   )
-   port map (
-      clock_i     => i_CLK_28,
-      reset_i     => reset,
-      
-      empty_o     => uart0_fifo_empty,
-      full_o      => uart0_fifo_full,
-      
-      rd_i        => port_143b_rd and not uart_153b_select,   -- read address adjusted on falling edge if not empty
-      raddr_o     => uart0_fifo_raddr,
-      
-      wr_i        => uart0_fifo_we,                           -- write address adjusted on falling edge if not full
-      waddr_o     => uart0_fifo_waddr
-   );
+-- joy_iomode_hwflen <= '0' when joy_iomode_uart_en = '0' else uart0_hwflow_en when nr_0b_joy_iomode_0 = '0' else uart1_hwflow_en;
 
-   -- uart 1 8/1/N
+   -- uarts
    
-   uart1_mod: entity work.uart
-   port map (
-      clock_i              => i_CLK_28,
-      reset_i              => reset_hard,
-
-      uart_prescaler_i     => uart1_153b_prescalar_msb & uart1_143b_prescalar,
-      
-      TX_start_i           => port_133b_wr and uart_153b_select,    -- 1 to start transmission
-      TX_byte_i            => cpu_do,                          -- byte to transmit
-      TX_active_o          => uart1_tx_busy,                   -- 1 during transmission
-      TX_out_o             => uart1_tx,                        -- Tx
-      TX_byte_finished_o   => open,                            -- when complete, 1 for one cycle
-      
-      RX_in_i              => uart1_rx,                        -- Rx
-      RX_byte_finished_o   => uart1_rx_avail,                  -- when complete, 1 for one cycle
-      RX_byte_o            => uart1_rx_byte                    -- incoming byte
-   );
-
-   fifop_uart1_rx: entity work.fifop
-   generic map (
-      DEPTH_BITS  => 9
-   )
-   port map (
-      clock_i     => i_CLK_28,
-      reset_i     => reset,
-      
-      empty_o     => uart1_fifo_empty,
-      full_o      => uart1_fifo_full,
-      
-      rd_i        => port_143b_rd and uart_153b_select,    -- read address adjusted on falling edge if not empty
-      raddr_o     => uart1_fifo_raddr,
-      
-      wr_i        => uart1_fifo_we,                        -- write address adjusted on falling edge if not full
-      waddr_o     => uart1_fifo_waddr
-   );
-   
-   -- settings & status
-   
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if reset = '1' then
-            uart_153b_select <= '0';
-            if reset_hard = '1' then
-               uart0_153b_prescalar_msb <= (others => '0');
-               uart1_153b_prescalar_msb <= (others => '0');
-            end if;
-         elsif port_153b_wr = '1' then
-            uart_153b_select <= cpu_do(6);
-            if cpu_do(4) = '1' then
-               if cpu_do(6) = '0' then
-                  uart0_153b_prescalar_msb <= cpu_do(2 downto 0);
-               else
-                  uart1_153b_prescalar_msb <= cpu_do(2 downto 0);
-               end if;
-            end if;
-         end if;
-      end if;
-   end process;
-   
-   port_153b_dat(7 downto 3) <= '0' & uart_153b_select & "000";
-   port_153b_dat(2 downto 0) <= uart0_153b_prescalar_msb when uart_153b_select = '0' else uart1_153b_prescalar_msb;
-   
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if reset_hard = '1' then
-            uart0_143b_prescalar <= "00000011110011";   -- 115200 @ 28MHz system clock
-         elsif port_143b_wr = '1' and uart_153b_select = '0' then
-            if cpu_do(7) = '0' then
-               uart0_143b_prescalar(6 downto 0) <= cpu_do(6 downto 0);
-            else
-               uart0_143b_prescalar(13 downto 7) <= cpu_do(6 downto 0);
-            end if;
-         end if;
-      end if;
-   end process;
-   
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if reset_hard = '1' then
-            uart1_143b_prescalar <= "00000011110011";   -- 115200 @ 28MHz system clock
-         elsif port_143b_wr = '1' and uart_153b_select = '1' then
-            if cpu_do(7) = '0' then
-               uart1_143b_prescalar(6 downto 0) <= cpu_do(6 downto 0);
-            else
-               uart1_143b_prescalar(13 downto 7) <= cpu_do(6 downto 0);
-            end if;
-         end if;
-      end if;
-   end process;
-
-   process (i_CLK_CPU)
-   begin
-      if falling_edge(i_CLK_CPU) then
-         if uart_153b_select = '0' then
-            port_133b_dat_20 <= uart0_fifo_full & uart0_tx_busy & not uart0_fifo_empty;
-         else
-            port_133b_dat_20 <= uart1_fifo_full & uart1_tx_busy & not uart1_fifo_empty;
-         end if;
-      end if;
-   end process;
-   
-   port_133b_dat <= "00000" & port_133b_dat_20;
-   
-   -- fifo memory, share a single bram unit
-   
-   uart_fifo_rx: entity work.tdpram
-   generic map 
+   uart_mod: entity work.uart
+   generic map
    (
-      addr_width_g  => 10,
-      data_width_g  => 8
+      NOISE_REJECTION_BITS => 2
    )
    port map 
    (
-      -- uart 0
-      clk_a_i  => i_CLK_28,
-      we_a_i   => uart0_fifo_we,
-      addr_a_i => '0' & uart0_fifo_addr,
-      data_a_i => uart0_rx_byte_dly,
-      data_a_o => uart0_rx_o,
-      -- uart 1
-      clk_b_i  => i_CLK_28,
-      we_b_i   => uart1_fifo_we,
-      addr_b_i => '1' & uart1_fifo_addr,
-      data_b_i => uart1_rx_byte_dly,
-      data_b_o => uart1_rx_o
+      i_CLK                => i_CLK_28,
+      i_CLK_n              => i_CLK_28_n,
+      
+      i_reset              => reset,
+      i_reset_hard         => '0',    -- hard_reset done by core load
+      
+      i_uart_reg           => cpu_a(9 downto 8),
+      
+      -- read from uart registers to cpu
+      
+      i_uart_rd            => port_uart_rd,
+      o_cpu_d              => uart_do,
+      
+      -- write from cpu to uart registers
+      
+      i_uart_wr            => port_uart_wr,
+      i_cpu_d              => cpu_do,
+      
+      -- uart 0 (esp)
+      
+      o_uart0_hwflow       => uart0_hwflow_en,
+      
+      i_Rx_0               => uart0_rx,
+      o_Rx_0_rtr_n         => uart0_rx_rtr_n,
+      
+      o_Rx_0_avail         => uart0_rx_avail,
+      o_Rx_0_near_full     => uart0_rx_near_full,
+      
+      o_Rx_0_err           => open,  -- to ctc
+      o_Rx_0_err_break     => open,  -- to ctc
+      
+      o_Tx_0               => uart0_tx,
+      i_Tx_0_cts_n         => uart0_tx_cts_n,
+      
+      o_Tx_0_empty         => uart0_tx_empty,
+      
+      -- uart 1 (pi)
+      
+      o_uart1_hwflow       => uart1_hwflow_en,  -- to pi to select flow control pins
+      
+      i_Rx_1               => uart1_rx,
+      o_Rx_1_rtr_n         => uart1_rx_rtr_n,
+      
+      o_Rx_1_avail         => uart1_rx_avail,
+      o_Rx_1_near_full     => uart1_rx_near_full,
+      
+      o_Rx_1_err           => open,  -- to ctc
+      o_Rx_1_err_break     => open,  -- to ctc
+      
+      o_Tx_1               => uart1_tx,
+      i_Tx_1_cts_n         => uart1_tx_cts_n,
+      
+      o_Tx_1_empty         => uart1_tx_empty
    );
-
-   -- cpu read has priority over uart write
    
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if reset = '1' then
-            uart0_rx_avail_dly <= '0';
-         elsif uart0_fifo_we = '1' then
-            uart0_rx_avail_dly <= '0';
-         elsif uart0_rx_avail = '1' then
-            uart0_rx_avail_dly <= '1';
-         end if;
-      end if;
-   end process;
-   
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if uart0_rx_avail = '1' then
-            uart0_rx_byte_dly <= uart0_rx_byte;
-         end if;
-      end if;
-   end process;
-   
-   uart0_fifo_addr <= uart0_fifo_waddr when uart0_fifo_we = '1' else uart0_fifo_raddr;
-   uart0_fifo_we <= uart0_rx_avail_dly and (not uart0_fifo_full) and (uart_153b_select or (not port_143b_rd));
-   
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if reset = '1' then
-            uart1_rx_avail_dly <= '0';
-         elsif uart1_fifo_we = '1' then
-            uart1_rx_avail_dly <= '0';
-         elsif uart1_rx_avail = '1' then
-            uart1_rx_avail_dly <= '1';
-         end if;
-      end if;
-   end process;
-   
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if uart1_rx_avail = '1' then
-            uart1_rx_byte_dly <= uart1_rx_byte;
-         end if;
-      end if;
-   end process;
-   
-   uart1_fifo_addr <= uart1_fifo_waddr when uart1_fifo_we = '1' else uart1_fifo_raddr;
-   uart1_fifo_we <= uart1_rx_avail_dly and (not uart1_fifo_full) and ((not uart_153b_select) or (not port_143b_rd));
-
    process (i_CLK_CPU)
    begin
       if falling_edge(i_CLK_CPU) then
-         if uart_153b_select = '0' then
-            if uart0_fifo_empty = '1' then
-               port_143b_dat <= (others => '0');
-            else
-               port_143b_dat <= uart0_rx_o;
-            end if;
-         else
-            if uart1_fifo_empty = '1' then
-               port_143b_dat <= (others => '0');
-            else
-               port_143b_dat <= uart1_rx_o;
-            end if;
-         end if;
+         port_uart_dat <= uart_do;
       end if;
    end process;
    
@@ -3191,45 +3434,26 @@ begin
    -- 110 = MD 2 (3 or 6 button joystick port 0x37)
    -- 111 = Both joysticks in I/O Mode
    --
-   -- Physical connector:
-   --
-   -- START, A, F2, F1, U, D, L, R
-   --     7, 6,  5,  4, 3, 2, 1, 0
+   -- Joystick Signals:
+   --   X Z Y START A C(F2) B(F1) U D L R
+   --  10 9 8   7   6   5     4   3 2 1 0
 
-   -- keyboard and keyboard joysticks
-   
+   -- keyboard
+
    process (i_CLK_CPU)
    begin
       if falling_edge(i_CLK_CPU) then
          keyrow <= cpu_a(15 downto 8);
       end if;
    end process;
-   
-   -- todo: older tbblue mapped extra fire buttons to Q and W; should we do this?
-   -- todo: user defined keys joystick (maybe makes previous point moot)
-   
-   joyL_up <= i_JOY_LEFT(6) or i_JOY_LEFT(3);
-   joyR_up <= i_JOY_RIGHT(6) or i_JOY_RIGHT(3);
-
-   joyL_sinc1 <= not(i_JOY_LEFT(1) & i_JOY_LEFT(0) & i_JOY_LEFT(2) & joyL_up & i_JOY_LEFT(4)) when keyrow(4) = '0' and nr_05_joy0 = "011" else (others => '1');
-   joyL_sinc2 <= not(i_JOY_LEFT(4) & joyL_up & i_JOY_LEFT(2) & i_JOY_LEFT(0) & i_JOY_LEFT(1)) when keyrow(3) = '0' and nr_05_joy0 = "000" else (others => '1');
-   joyL_cursA <= (not i_JOY_LEFT(1)) & "1111" when keyrow(3) = '0' and nr_05_joy0 = "010" else (others => '1');
-   joyL_cursB <= not(i_JOY_LEFT(2) & joyL_up & i_JOY_LEFT(0) & '0' & i_JOY_LEFT(4)) when keyrow(4) = '0' and nr_05_joy0 = "010" else (others => '1');
-
-   joyR_sinc1 <= not(i_JOY_RIGHT(1) & i_JOY_RIGHT(0) & i_JOY_RIGHT(2) & joyR_up & i_JOY_RIGHT(4)) when keyrow(4) = '0' and nr_05_joy1 = "011" else (others => '1');
-   joyR_sinc2 <= not(i_JOY_RIGHT(4) & joyR_up & i_JOY_RIGHT(2) & i_JOY_RIGHT(0) & i_JOY_RIGHT(1)) when keyrow(3) = '0' and nr_05_joy1 = "000" else (others => '1');
-   joyR_cursA <= (not i_JOY_RIGHT(1)) & "1111" when keyrow(3) = '0' and nr_05_joy1 = "010" else (others => '1');
-   joyR_cursB <= not(i_JOY_RIGHT(2) & joyR_up & i_JOY_RIGHT(0) & '0' & i_JOY_RIGHT(4)) when keyrow(4) = '0' and nr_05_joy1 = "010" else (others => '1');   
-   
-   joy_key <= (joyL_sinc1 and joyL_sinc2 and joyL_cursA and joyL_cursB and joyR_sinc1 and joyR_sinc2 and joyR_cursA and joyR_cursB) when io_mode_en = '0' else (others => '1');
 
    port_fe_bus <= i_BUS_DI when expbus_eff_en = '1' and port_propagate_fe = '1' else X"FF";
 
    process (i_CLK_CPU)
    begin
       if falling_edge(i_CLK_CPU) then
-         if port_fe_override = '0' or expbus_eff_en = '0' or port_propagate_fe = '0' then
-            port_fe_dat_0 <= '1' & ((not i_AUDIO_EAR) xor pi_fe_ear xor (port_fe_ear or (port_fe_mic and nr_08_keyboard_issue2))) & '1' & (i_KBD_COL and joy_key);
+         if expbus_eff_en = '0' or port_propagate_fe = '0' or port_fe_override = '0' then
+            port_fe_dat_0 <= '1' & ((i_AUDIO_EAR xor pi_fe_ear) or (port_fe_ear or (port_fe_mic and nr_08_keyboard_issue2))) & '1' & i_KBD_COL;
          else
             port_fe_dat_0 <= X"FF";
          end if;
@@ -3240,31 +3464,31 @@ begin
 
    port_fe_dat <= port_fe_dat_0 and port_fe_bus;
 
-   -- other joysticks
+   -- kempston and md pad
    
    mdL_1f_en <= '1' when nr_05_joy0 = "101" else '0';
    mdL_37_en <= '1' when nr_05_joy0 = "110" else '0';
    
-   joyL_1f_en <= '1' when nr_05_joy0 = "001" or mdL_1f_en = '1' or io_mode_en = '1' else '0';
-   joyL_37_en <= '1' when (nr_05_joy0 = "100" or mdL_37_en = '1') and io_mode_en = '0' else '0';
+   joyL_1f_en <= '1' when nr_05_joy0 = "001" or mdL_1f_en = '1' else '0';
+   joyL_37_en <= '1' when nr_05_joy0 = "100" or mdL_37_en = '1' else '0';
    
    joyL_1f(7 downto 6) <= i_JOY_LEFT(7 downto 6) when mdL_1f_en = '1' else (others => '0');
-   joyL_1f(5 downto 0) <= (i_JOY_LEFT(5 downto 4) & (i_JOY_LEFT(3) or (i_JOY_LEFT(6) and not mdL_1f_en)) & i_JOY_LEFT(2 downto 0)) when joyL_1f_en = '1' else (others => '0');
+   joyL_1f(5 downto 0) <= i_JOY_LEFT(5 downto 0) when joyL_1f_en = '1' else (others => '0');
 
    joyL_37(7 downto 6) <= i_JOY_LEFT(7 downto 6) when mdL_37_en = '1' else (others => '0');
-   joyL_37(5 downto 0) <= (i_JOY_LEFT(5 downto 4) & (i_JOY_LEFT(3) or (i_JOY_LEFT(6) and not mdL_37_en)) & i_JOY_LEFT(2 downto 0)) when joyL_37_en = '1' else (others => '0');
+   joyL_37(5 downto 0) <= i_JOY_LEFT(5 downto 0) when joyL_37_en = '1' else (others => '0');
 
    mdR_1f_en <= '1' when nr_05_joy1 = "101" else '0';
    mdR_37_en <= '1' when nr_05_joy1 = "110" else '0';
    
-   joyR_1f_en <= '1' when (nr_05_joy1 = "001" or mdR_1f_en = '1') and io_mode_en = '0' else '0';
-   joyR_37_en <= '1' when nr_05_joy1 = "100" or mdR_37_en = '1' or io_mode_en = '1' else '0';
+   joyR_1f_en <= '1' when nr_05_joy1 = "001" or mdR_1f_en = '1' else '0';
+   joyR_37_en <= '1' when nr_05_joy1 = "100" or mdR_37_en = '1' else '0';
    
    joyR_1f(7 downto 6) <= i_JOY_RIGHT(7 downto 6) when mdR_1f_en = '1' else (others => '0');
-   joyR_1f(5 downto 0) <= (i_JOY_RIGHT(5 downto 4) & (i_JOY_RIGHT(3) or (i_JOY_RIGHT(6) and not mdR_1f_en)) & i_JOY_RIGHT(2 downto 0)) when joyR_1f_en = '1' else (others => '0');
+   joyR_1f(5 downto 0) <= i_JOY_RIGHT(5 downto 0) when joyR_1f_en = '1' else (others => '0');
    
    joyR_37(7 downto 6) <= i_JOY_RIGHT(7 downto 6) when mdR_37_en = '1' else (others => '0');
-   joyR_37(5 downto 0) <= (i_JOY_RIGHT(5 downto 4) & (i_JOY_RIGHT(3) or (i_JOY_RIGHT(6) and not mdR_37_en)) & i_JOY_RIGHT(2 downto 0)) when joyR_37_en = '1' else (others => '0');
+   joyR_37(5 downto 0) <= i_JOY_RIGHT(5 downto 0) when joyR_37_en = '1' else (others => '0');
    
    process (i_CLK_CPU)
    begin
@@ -3280,28 +3504,37 @@ begin
       end if;
    end process;
    
-   -- port 0x37 joystick control io mode
-
+   -- joystick io mode
+   
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
          if reset = '1' then
-            io_mode <= "00";
-            io_mode_bit_0 <= '1';
-         elsif port_37_wr = '1' then
-            io_mode <= cpu_do(7 downto 6);
-            io_mode_lr <= cpu_do(4);
-            io_mode_bit_0 <= cpu_do(0);
+            joy_iomode_pin7 <= '1';
+         else
+            case nr_0b_joy_iomode is
+               when "00" =>
+                  joy_iomode_pin7 <= nr_0b_joy_iomode_0;
+               when "01" =>
+                  if ctc_zc_to(3) = '1' and (nr_0b_joy_iomode_0 = '1' or joy_iomode_pin7 = '0') then
+                     joy_iomode_pin7 <= not joy_iomode_pin7;
+                  end if;
+               when others =>
+                  if nr_0b_joy_iomode_0 = '0' then
+                     joy_iomode_pin7 <= uart0_tx;
+                  else
+                     joy_iomode_pin7 <= uart1_tx;
+                  end if;
+            end case;
          end if;
       end if;
    end process;
 
-   io_mode_uart_en <= '1' when io_mode_en = '1' and io_mode = "10" else '0';
-   io_mode_uart_rx <= not i_JOY_LEFT(5);
-   io_mode_uart_tx <= uart0_tx when io_mode_bit_0 = '0' else uart1_tx;
+   joy_iomode_uart_en <= '1' when nr_0b_joy_iomode_en = '1' and nr_0b_joy_iomode(1) = '1' else '0';
    
-   io_mode_pin_7 <= io_mode_uart_tx when io_mode_uart_en = '1' else io_mode_bit_0;
-   
+   joy_uart_rx <= ((not nr_0b_joy_iomode(0)) and not i_JOY_LEFT(5)) or (nr_0b_joy_iomode(0) and not i_JOY_RIGHT(5));
+   joy_uart_cts_n <= ((not nr_0b_joy_iomode(0)) and not i_JOY_LEFT(4)) or (nr_0b_joy_iomode(0) and not i_JOY_RIGHT(4));
+  
    -- mouse
    
    process (i_CLK_CPU)
@@ -3331,6 +3564,7 @@ begin
 
    -- FE, FF : ULA/SCLD
    -- 7FFD, DFFD, 1FFD : 128K MEMORY PAGING
+   -- I/O TRAPS & NEXTREG NMI GENERATION
    -- 123B : LAYER 2 CONTROL
    -- COPPER
    -- CTC
@@ -3381,6 +3615,8 @@ begin
             port_ff_reg(5 downto 0) <= nr_wr_dat(5 downto 0);
          elsif nr_22_we = '1' then
             port_ff_reg(6) <= nr_wr_dat(2);
+         elsif nr_c4_we = '1' then
+            port_ff_reg(6) <= not nr_wr_dat(0);
          end if;
       end if;
    end process;
@@ -3463,7 +3699,7 @@ begin
             if nr_wr_dat(3) = '1' then
                port_dffd_reg(2 downto 0) <= "00" & nr_wr_dat(7);
             end if;
-        
+       
          end if;
       end if;
    end process;
@@ -3511,7 +3747,7 @@ begin
    
    port_7ffd_shadow <= port_7ffd_dat(3);
    port_7ffd_locked <= '0' when (nr_8f_mapping_mode_pentagon_1024_en = '1') or (nr_8f_mapping_mode_profi = '1' and port_dffd_reg(4) = '1') else port_7ffd_reg(5);
-   
+
    port_1ffd_special <= port_1ffd_reg(0);
    port_1ffd_rom <= port_1ffd_reg(2) & port_7ffd_reg(4);
    
@@ -3531,15 +3767,14 @@ begin
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
-         if reset_hard = '1' then
-            nr_8f_mapping_mode <= "00";
-         elsif nr_8f_we = '1' then
+         if nr_8f_we = '1' then
             nr_8f_mapping_mode <= nr_wr_dat(1 downto 0);
          end if;
       end if;
    end process;
    
-   nr_8f_mapping_mode_profi <= '1' when nr_8f_mapping_mode = "01" else '0';
+-- nr_8f_mapping_mode_profi <= '1' when nr_8f_mapping_mode = "01" else '0';
+   nr_8f_mapping_mode_profi <= '0';
    nr_8f_mapping_mode_pentagon <= '1' when nr_8f_mapping_mode = "10" or nr_8f_mapping_mode_pentagon_1024_en = '1' else '0';
    nr_8f_mapping_mode_pentagon_1024 <= '1' when nr_8f_mapping_mode = "11" else '0';
    
@@ -3562,6 +3797,86 @@ begin
       end if;
    end process;
    
+   --
+   -- I/O TRAPS & NEXTREG NMI GENERATION
+   --
+
+   -- Issue #8 : nmi must be presented to z80 on rising edge of T3 in io write cycle
+   -- Unfortunately this complicates things and is much uglier than the nextreg and special keys route :(
+
+   -- cpu + copper nmi gen and i/o trap
+
+   nmi_cpu_02_we <= '1' when cpu_requester = '1' and cpu_requester_reg = X"02" else '0';
+   nmi_cu_02_we <= '1' when copper_req = '1' and copper_nr_reg = X"02" else '0';
+   
+   nmi_gen_nr_mf <= (nmi_cpu_02_we and cpu_requester_dat(3)) or (nmi_cu_02_we and copper_nr_dat(3));
+   nmi_gen_nr_divmmc <= (nmi_cpu_02_we and cpu_requester_dat(2)) or (nmi_cu_02_we and copper_nr_dat(2));
+   
+   nmi_gen_iotrap <= (port_2ffd_rd or port_3ffd_rd or port_3ffd_wr);   -- already qualified by nr_d8_io_trap_fdc_en
+   
+   nmi_sw_gen_mf <= nmi_gen_nr_mf or nmi_gen_iotrap; 
+   nmi_sw_gen_divmmc <= nmi_gen_nr_divmmc;
+
+   process (i_CLK_28)
+   begin
+      if rising_edge(i_CLK_28) then
+         if reset = '1' then
+            nr_02_generate_mf_nmi <= '0';
+         elsif nmi_gen_nr_mf = '1' and nmi_accept_cause = '1' then
+            nr_02_generate_mf_nmi <= '1';
+         elsif nr_02_we = '1' and nr_wr_dat(3) = '0' then
+            nr_02_generate_mf_nmi <= '0';
+         end if;
+      end if;
+   end process;
+   
+   process (i_CLK_28)
+   begin
+      if rising_edge(i_CLK_28) then
+         if reset = '1' then
+            nr_02_generate_divmmc_nmi <= '0';
+         elsif nmi_gen_nr_divmmc = '1' and nmi_accept_cause = '1' then
+            nr_02_generate_divmmc_nmi <= '1';
+         elsif nr_02_we = '1' and nr_wr_dat(2) = '0' then
+            nr_02_generate_divmmc_nmi <= '0';
+         end if;
+      end if;
+   end process;
+
+   process (i_CLK_28)
+   begin
+      if rising_edge(i_CLK_28) then
+         if reset = '1' then
+            nr_da_iotrap_cause <= (others => '0');
+         elsif nmi_gen_iotrap = '1' and nmi_accept_cause = '1' then
+            if port_2ffd_rd = '1' then
+               nr_da_iotrap_cause <= "01";
+            elsif port_3ffd_rd = '1' then
+               nr_da_iotrap_cause <= "10";
+            else   -- port_3ffd_wr
+               nr_da_iotrap_cause <= "11";
+            end if;
+         elsif nr_02_we = '1' and nr_wr_dat(4) = '0' then
+            nr_da_iotrap_cause <= (others => '0');
+         end if;
+      end if;
+   end process;
+   
+   nr_02_iotrap <= nr_da_iotrap_cause(1) or nr_da_iotrap_cause(0);
+
+   process (i_CLK_28)
+   begin
+      if rising_edge(i_CLK_28) then
+         if reset = '1' then
+            nr_d9_iotrap_write <= (others => '0');
+         elsif port_3ffd_wr = '1' and nmi_accept_cause = '1' then
+            nr_d9_iotrap_write <= cpu_do;
+         elsif nr_d9_we = '1' then
+            nr_d9_iotrap_write <= nr_wr_dat;
+         end if;
+      end if;
+   end process;
+
    --
    -- PORT 123B LAYER 2 CONTROL
    --
@@ -3667,7 +3982,71 @@ begin
    -- CTC (COUNTER / TIMER CIRCUIT)
    --
 
+--   ctc_mod: entity work.ctc
+--   generic map
+--   (
+--      NUM_CTC        => 8,
+--      NUM_CTC_LOG2   => 3
+--   )
+--   port map
+--   (
+--      i_CLK          => i_CLK_28,
+--      i_reset        => reset,
+--      
+--      i_port_ctc_wr  => port_ctc_wr,
+--      i_port_ctc_sel => cpu_a(10 downto 8),
+--  
+--      i_int_en_wr    => nr_c5_we,
+--      i_int_en       => nr_wr_dat,
+--  
+--      i_cpu_d        => cpu_do,
+--      o_cpu_d        => ctc_do,
+--      
+--      i_clk_trg      => ctc_zc_to(6 downto 0) & ctc_zc_to(7),
+--      
+--      o_im2_vector_wr  => open,
+--      
+--      o_zc_to        => ctc_zc_to,
+--      o_int_en       => ctc_int_en
+--   );
+
+--   ctc_mod: entity work.ctc
+--   generic map 
+--   (
+--      NUM_CTC        => 6,
+--      NUM_CTC_LOG2   => 3
+--   )
+--   port map
+--   (
+--      i_CLK          => i_CLK_28,
+--      i_reset        => reset,
+--      
+--      i_port_ctc_wr  => port_ctc_wr,
+--      i_port_ctc_sel => cpu_a(10 downto 8),
+--  
+--      i_int_en_wr    => nr_c5_we,
+--      i_int_en       => nr_wr_dat(5 downto 0),
+--  
+--      i_cpu_d        => cpu_do,
+--      o_cpu_d        => ctc_do,
+--      
+--      i_clk_trg      => ctc_zc_to(4 downto 0) & ctc_zc_to(5),
+--      
+--      o_im2_vector_wr  => open,
+--      
+--      o_zc_to        => ctc_zc_to(5 downto 0),
+--      o_int_en       => ctc_int_en(5 downto 0)
+--   );
+--
+--   ctc_zc_to(7 downto 6) <= "00";
+--   ctc_int_en(7 downto 6) <= "00";
+
    ctc_mod: entity work.ctc
+   generic map
+   (
+      NUM_CTC        => 4,
+      NUM_CTC_LOG2   => 3
+   )
    port map
    (
       i_CLK          => i_CLK_28,
@@ -3676,19 +4055,22 @@ begin
       i_port_ctc_wr  => port_ctc_wr,
       i_port_ctc_sel => cpu_a(10 downto 8),
 
-      i_int_en_wr    => nr_c6_we,
-      i_int_en       => nr_wr_dat,
+      i_int_en_wr    => nr_c5_we,
+      i_int_en       => nr_wr_dat(3 downto 0),
 
       i_cpu_d        => cpu_do,
       o_cpu_d        => ctc_do,
       
-      i_clk_trg      => ctc_zc_to(6 downto 0) & ctc_zc_to(7),
+      i_clk_trg      => ctc_zc_to(2 downto 0) & ctc_zc_to(3),
       
       o_im2_vector_wr  => open,
       
-      o_zc_to        => ctc_zc_to,
-      o_int_en       => ctc_int_en
+      o_zc_to        => ctc_zc_to(3 downto 0),
+      o_int_en       => ctc_int_en(3 downto 0)
    );
+   
+   ctc_zc_to(7 downto 4) <= "0000";
+   ctc_int_en(7 downto 4) <= "0000";
    
    process (i_CLK_CPU)
    begin
@@ -3697,51 +4079,75 @@ begin
       end if;
    end process;
    
-   ctc_int <= ctc_int_en and ctc_zc_to;
-   ctc_int_n <= (not port_ctc_io_en) or not (ctc_int(7) or ctc_int(6) or ctc_int(5) or ctc_int(4) or ctc_int(3) or ctc_int(2) or ctc_int(1) or ctc_int(0));
-   
    --
    -- DIVMMC
    --
    
-   -- divmmc normally includes an spi interface to the sd card but on the next
+   -- divmmc normally includes an spi interface to the sd card but on the zx next
    -- the spi interface is implemented separately
 
    -- todo: add sets of automap entry points for trapping different systems
    
+   divmmc_retn_seen <= z80_retn_seen_28 and not mf_is_active;
+   divmmc_automap_reset <= '1' when port_divmmc_io_en = '0' or nr_0a_divmmc_automap_en = '0' else '0';
+   
+   process (i_CLK_28)
+   begin
+      if falling_edge(i_CLK_28) then
+         if cpu_m1_n = '1' then
+            divmmc_automap_instant_on_q <= '0';
+            divmmc_automap_delayed_on_q <= '0';
+            divmmc_automap_delayed_off_q <= '0';
+            divmmc_automap_rom3_instant_on_q <= '0';
+            divmmc_automap_rom3_delayed_on_q <= '0';
+            divmmc_automap_nmi_instant_on_q <= '0';
+            divmmc_automap_nmi_delayed_on_q <= '0';
+         elsif cpu_mreq_n = '1' then
+            divmmc_automap_instant_on_q <= divmmc_automap_instant_on;
+            divmmc_automap_delayed_on_q <= divmmc_automap_delayed_on;
+            divmmc_automap_delayed_off_q <= divmmc_automap_delayed_off;
+            divmmc_automap_rom3_instant_on_q <= divmmc_automap_rom3_instant_on;
+            divmmc_automap_rom3_delayed_on_q <= divmmc_automap_rom3_delayed_on;
+            divmmc_automap_nmi_instant_on_q <= divmmc_automap_nmi_instant_on;
+            divmmc_automap_nmi_delayed_on_q <= divmmc_automap_nmi_delayed_on;
+         end if;
+      end if;
+   end process;
+   
    divmmc_mod: entity work.divmmc
    port map
    (
-      reset_i              => reset,
-      clock_i              => i_CLK_28,
+      i_CLK                => i_CLK_28,
+      i_reset              => reset,
       
-      enable_i             => port_divmmc_io_en,
+      i_cpu_a_15_13        => cpu_a(15 downto 13),
+      i_cpu_mreq_n         => cpu_mreq_n,
+      i_cpu_m1_n           => cpu_m1_n,
       
-      cpu_a_15_13_i        => cpu_a(15 downto 13),
-      cpu_mreq_n_i         => cpu_mreq_n,
-      cpu_m1_n_i           => cpu_m1_n,
-      
-      divmmc_button_i      => nmi_divmmc_button,
-      
-      reset_automap_i      => not nr_06_divmmc_automap_en,
-      hide_automap_i       => sram_disable_divmmc_automap,
-      obscure_automap_i    => sram_obscure_divmmc_automap,
-      
-      automap_en_instant_i             => divmmc_automap_en_instant,
-      automap_en_delayed_i             => divmmc_automap_en_delayed,
-      automap_en_delayed_nohide_i      => divmmc_automap_en_delayed_nohide,
-      automap_en_delayed_nohide_nmi_i  => divmmc_automap_en_delayed_nohide_nmi,
-      automap_dis_delayed_i            => divmmc_automap_dis_delayed,
+      i_en                 => port_divmmc_io_en,
+      i_automap_reset      => divmmc_automap_reset,
+      i_automap_active     => sram_divmmc_automap_en,
+      i_automap_rom3_active=> sram_divmmc_automap_rom3_en,
+      i_retn_seen          => divmmc_retn_seen,
 
-      disable_nmi_o        => divmmc_nmi_hold,
-      automap_held_o       => divmmc_automap_held,
+      i_divmmc_button      => nmi_divmmc_button,
+      i_divmmc_reg         => port_e3_reg(7 downto 6) & "00" & port_e3_reg(3 downto 0),
+
+      i_automap_instant_on      => divmmc_automap_instant_on_q,
+      i_automap_delayed_on      => divmmc_automap_delayed_on_q,
+      i_automap_delayed_off     => divmmc_automap_delayed_off_q,
+      i_automap_rom3_instant_on => divmmc_automap_rom3_instant_on_q,
+      i_automap_rom3_delayed_on => divmmc_automap_rom3_delayed_on_q,
+      i_automap_nmi_instant_on  => divmmc_automap_nmi_instant_on_q,
+      i_automap_nmi_delayed_on  => divmmc_automap_nmi_delayed_on_q,
+
+      o_divmmc_rom_en      => divmmc_rom_en,     -- 1 if divmmc rom is active
+      o_divmmc_ram_en      => divmmc_ram_en,     -- 1 if divmmc ram bank is active
+      o_divmmc_rdonly      => divmmc_rdonly,     -- 1 if active divmmc is read only
+      o_divmmc_ram_bank    => divmmc_bank,       -- active divmmc ram bank
       
-      divmmc_reg_i         => port_e3_reg,
-      
-      divmmc_rom_en_o      => divmmc_rom_en,     -- 1 if divmmc rom is active
-      divmmc_ram_en_o      => divmmc_ram_en,     -- 1 if divmmc ram bank is active
-      divmmc_rdonly_o      => divmmc_rdonly,     -- 1 if active divmmc is read only
-      divmmc_ram_bank_o    => divmmc_bank        -- active divmmc ram bank
+      o_disable_nmi        => divmmc_nmi_hold,
+      o_automap_held       => divmmc_automap_held
    );
    
    process (i_CLK_28)
@@ -3749,17 +4155,19 @@ begin
       if rising_edge(i_CLK_28) then
          if reset = '1' then
             port_e3_reg <= (others => '0');
+--       elsif divmmc_retn_seen = '1' then
+--          port_e3_reg(7) <= '0';
          elsif port_e3_wr = '1' then
             port_e3_reg(7) <= cpu_do(7);
             port_e3_reg(6) <= cpu_do(6) or port_e3_reg(6);
-            port_e3_reg(5 downto 0) <= cpu_do(5 downto 0);
+            port_e3_reg(3 downto 0) <= cpu_do(3 downto 0);  -- 16 pages of 8K = 128K allocated to divmmc
          elsif nr_09_we = '1' and nr_wr_dat(3) = '1' then
             port_e3_reg(6) <= '0';
          end if;
       end if;
    end process;
    
-   port_e3_dat <= port_e3_reg;
+   port_e3_dat <= port_e3_reg(7 downto 6) & "00" & port_e3_reg(3 downto 0);
    
    --
    -- LAYER 2
@@ -3853,16 +4261,10 @@ begin
       clock_i              => i_CLK_28,
       
       cpu_a_0066_i         => mf_a_0066,
-      cpu_a_1fxx_i         => mf_a_1fxx,
-      cpu_a_7fxx_i         => mf_a_7fxx,
-      cpu_a_fexx_i         => mf_a_fexx,
-      
+
       cpu_mreq_n_i         => cpu_mreq_n,
       cpu_m1_n_i           => cpu_m1_n,
-      
-      port_1ffd_i          => port_1ffd_dat,
-      port_7ffd_i          => port_7ffd_dat,
-      port_fe_border_i     => port_fe_border,
+      cpu_retn_seen_i      => z80_retn_seen_28,
       
       enable_i             => port_multiface_io_en,
       button_i             => nmi_mf_button,
@@ -3877,11 +4279,27 @@ begin
       nmi_disable_o        => mf_nmi_hold,
       mf_enabled_o         => mf_mem_en,
       
-      mf_port_en_o         => mf_port_en,
-      mf_port_dat_o        => mf_port_dat
+      mf_port_en_o         => mf_port_en
    );
    
    mf_is_active <= mf_mem_en or mf_nmi_hold;
+
+   process (i_CLK_CPU)
+   begin
+      if falling_edge(i_CLK_CPU) then
+         if nr_0a_mf_type = "00" then     -- mf +3
+            case cpu_a(15 downto 12) is
+               when "0001" => mf_port_dat <= port_1ffd_reg;
+               when "0111" => mf_port_dat <= port_7ffd_reg;
+               when "1101" => mf_port_dat <= '0' & port_dffd_reg_6 & '0' & port_dffd_reg;
+               when "1110" => mf_port_dat <= "0000" & port_eff7_reg_3 & port_eff7_reg_2 & "00";
+               when others => mf_port_dat <= "00000" & port_fe_reg(2 downto 0);
+            end case;
+         else
+            mf_port_dat <= port_7ffd_reg(3) & "1111111";
+         end if;
+      end if;
+   end process;
    
    --
    -- SPRITES
@@ -3930,6 +4348,11 @@ begin
       clip_y1_i         => unsigned(nr_19_sprite_clip_y1),
       clip_y2_i         => unsigned(nr_19_sprite_clip_y2)
    );
+
+-- port_303b_dat <= (others => '0');
+-- sprite_mirror_id <= (others => '0');
+-- sprite_pixel <= (others => '0');
+-- sprite_pixel_en <= '0';
 
    --
    -- TILEMAP
@@ -4050,7 +4473,7 @@ begin
                   '0';
    
 -- port_contend <= (not cpu_a(0)) or port_7ffd_active or port_1ffd_active or port_p3_float_active or port_bf3b or port_ff3b;
-   port_contend <= (not cpu_a(0)) or port_7ffd_active or port_bf3b or port_ff3b;
+   port_contend <= (not cpu_a(0)) or port_7ffd_active or port_bf3b or port_ff3b;  -- uno requires ula+ ports to be contended
 
    process (i_CLK_CPU)
    begin
@@ -4150,7 +4573,7 @@ begin
    begin
       if rising_edge(i_CLK_28) then
          if reset = '1' then
-            nr_register <= (others => '0');
+            nr_register <= X"24";  -- protection against legacy programs accidentally hitting ports 0x243B, 0x253B
          elsif port_243b_wr = '1' then
             nr_register <= cpu_do;
          end if;
@@ -4269,9 +4692,9 @@ begin
    begin
       if rising_edge(i_CLK_28) then
          if reset = '1' then
-            copper_req_dly <= '0';
+            copper_requester_d <= '0';
          else
-            copper_req_dly <= copper_requester;
+            copper_requester_d <= copper_requester;
          end if;
       end if;
    end process;
@@ -4283,7 +4706,7 @@ begin
             copper_req <= '0';
             copper_nr_reg <= (others => '0');
             copper_nr_dat <= (others => '0');
-         elsif copper_requester = '1' and copper_req_dly = '0' then
+         elsif copper_requester = '1' and copper_requester_d = '0' then
             copper_req <= '1';
             copper_nr_reg <= '0' & copper_dout(14 downto 8);
             copper_nr_dat <= copper_dout(7 downto 0);
@@ -4297,13 +4720,17 @@ begin
    cpu_requester_1 <= port_253b_wr;
    cpu_requester_2 <= '1' when port_ff3b_wr = '1' and port_bf3b_ulap_mode = "00" else '0';
 
+   cpu_requester <= cpu_requester_0 or cpu_requester_1 or cpu_requester_2;
+   cpu_requester_reg <= Z80N_data_s(15 downto 8) when cpu_requester_0 = '1' else nr_register when cpu_requester_1 = '1' else X"FF";
+   cpu_requester_dat <= Z80N_data_s(7 downto 0) when cpu_requester_0 = '1' else cpu_do when cpu_requester_1 = '1' else (cpu_do(4 downto 2) & cpu_do(7 downto 5) & cpu_do(1 downto 0));
+
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
          if reset = '1' then
-            cpu_req_dly <= '0';
+            cpu_requester_d <= '0';
          else
-            cpu_req_dly <= cpu_requester_0 or cpu_requester_1 or cpu_requester_2 or (cpu_req and not cpu_served);
+            cpu_requester_d <= cpu_requester;
          end if;
       end if;
    end process;
@@ -4315,20 +4742,12 @@ begin
             cpu_req <= '0';
             cpu_nr_reg <= (others => '0');
             cpu_nr_dat <= (others => '0');
-         elsif cpu_served = '1' then
+         elsif cpu_requester = '1' and cpu_requester_d = '0' then
+            cpu_req <= '1';
+            cpu_nr_reg <= cpu_requester_reg;
+            cpu_nr_dat <= cpu_requester_dat;
+         elsif cpu_req = '1' and copper_req = '0' then   -- cpu served
             cpu_req <= '0';
-         elsif cpu_req_dly = '0' and cpu_requester_0 = '1' then
-            cpu_req <= '1';
-            cpu_nr_reg <= Z80N_data_s(15 downto 8);
-            cpu_nr_dat <= Z80N_data_s(7 downto 0);
-         elsif cpu_req_dly = '0' and cpu_requester_1 = '1' then
-            cpu_req <= '1';
-            cpu_nr_reg <= nr_register;
-            cpu_nr_dat <= cpu_do;
-         elsif cpu_req_dly = '0' and cpu_requester_2 = '1' then
-            cpu_req <= '1';
-            cpu_nr_reg <= X"FF";  -- shhh our little secret
-            cpu_nr_dat <= cpu_do(4 downto 2) & cpu_do(7 downto 5) & cpu_do(1 downto 0);
          end if;
       end if;
    end process;
@@ -4336,9 +4755,10 @@ begin
    nr_wr_en <= copper_req or cpu_req;
    nr_wr_reg <= copper_nr_reg when copper_req = '1' else cpu_nr_reg;
    nr_wr_dat <= copper_nr_dat when copper_req = '1' else cpu_nr_dat;
-   
-   cpu_served <= '1' when copper_req = '0' and cpu_req = '1' else '0';
-   
+
+   -- (shortcut for nmi generation via nextreg 0x02 through i/o traps section)
+
+
    -- Write Registers
    
    -- combinatorial
@@ -4351,10 +4771,12 @@ begin
       nr_07_we <= '0';
       nr_08_we <= '0';
       nr_09_we <= '0';
+      nr_10_we <= '0';
+      nr_20_we <= '0';
       nr_22_we <= '0';
       nr_28_we <= '0';
       nr_29_we <= '0';
-      nr_2a_we <= '0';
+--    nr_2a_we <= '0';
       nr_2b_we <= '0';
       nr_2c_we <= '0';
       nr_2d_we <= '0';
@@ -4367,7 +4789,18 @@ begin
       nr_8c_we <= '0';
       nr_8e_we <= '0';
       nr_8f_we <= '0';
-      nr_c6_we <= '0';
+      nr_c2_we <= '0';
+      nr_c3_we <= '0';
+      nr_c4_we <= '0';
+      nr_c5_we <= '0';
+      nr_c8_we <= '0';
+      nr_c9_we <= '0';
+      nr_ca_we <= '0';
+      nr_d9_we <= '0';
+      nr_f0_we <= '0';
+      nr_f8_we <= '0';
+      nr_f9_we <= '0';
+      nr_fa_we <= '0';
       nr_ff_we <= '0';
 
       nr_sprite_mirror_we <= '0';
@@ -4387,10 +4820,12 @@ begin
             when X"07"  => nr_07_we <= '1';
             when X"08"  => nr_08_we <= '1';
             when X"09"  => nr_09_we <= '1';
+            when X"10"  => nr_10_we <= '1';
+            when X"20"  => nr_20_we <= '1';
             when X"22"  => nr_22_we <= '1';
             when X"28"  => nr_28_we <= '1';
             when X"29"  => nr_29_we <= '1';
-            when X"2A"  => nr_2a_we <= '1';
+--          when X"2A"  => nr_2a_we <= '1';
             when X"2B"  => nr_2b_we <= '1';
             when X"2C"  => nr_2c_we <= '1';
             when X"2D"  => nr_2d_we <= '1';
@@ -4434,7 +4869,18 @@ begin
             when X"8C" => nr_8c_we <= '1';
             when X"8E" => nr_8e_we <= '1';
             when X"8F" => nr_8f_we <= '1';
-            when X"C6" => nr_c6_we <= '1';
+            when X"C2" => nr_c2_we <= '1';
+            when X"C3" => nr_c3_we <= '1';
+            when X"C4" => nr_c4_we <= '1';
+            when X"C5" => nr_c5_we <= '1';
+            when X"C8" => nr_c8_we <= '1';
+            when X"C9" => nr_c9_we <= '1';
+            when X"CA" => nr_ca_we <= '1';
+            when X"D9" => nr_d9_we <= '1';
+            when X"F0" => nr_f0_we <= '1';
+            when X"F8" => nr_f8_we <= '1';
+            when X"F9" => nr_f9_we <= '1';
+            when X"FA" => nr_fa_we <= '1';
             when X"FF" => nr_ff_we <= '1';
             
             when others => null;
@@ -4454,10 +4900,6 @@ begin
    nr_mmu <= nr_wr_reg(2 downto 0);
    
    -- state
-            
-   nr_05_joymode_0 <= nr_wr_dat(3) & nr_wr_dat(7 downto 6);
-   nr_05_joymode_1 <= nr_wr_dat(1) & nr_wr_dat(5 downto 4);
-   nr_05_io_mode <= '1' when nr_05_joymode_0 = "111" or nr_05_joymode_1 = "111" else '0';
 
    process (i_CLK_28)
    begin
@@ -4465,14 +4907,16 @@ begin
 
          if reset = '1' then
 
-            io_mode_en <= '0';
-
             nr_06_hotkey_cpu_speed_en <= '1';
             nr_06_hotkey_5060_en <= '1';
             
             nr_08_contention_disable <= '0';
             
             nr_09_sprite_tie <= '0';
+            
+            nr_0b_joy_iomode_en <= '0';
+            nr_0b_joy_iomode <= "00";
+            nr_0b_joy_iomode_0 <= '1';
             
             nr_12_layer2_active_bank <= "0001000";
             nr_13_layer2_shadow_bank <= "0001011";
@@ -4582,24 +5026,22 @@ begin
             nr_70_layer2_palette_offset <= (others => '0');
             
             nr_71_layer2_scrollx_msb <= '0';
-            
-            nr_7f_user_register_0 <= (others => '1');
 
-            if nr_85_internal_port_reset_type = '1' or reset_hard = '1' then
+            if nr_85_internal_port_reset_type = '1' then
             
                nr_82_internal_port_enable <= (others => '1');
                nr_83_internal_port_enable <= (others => '1');
                nr_84_internal_port_enable <= (others => '1');
-               nr_85_internal_port_enable <= "1111";
+               nr_85_internal_port_enable <= (others => '1');
             
             end if;
 
-            if nr_89_bus_port_reset_type = '0' or reset_hard = '1' then
+            if nr_89_bus_port_reset_type = '0' then
             
                nr_86_bus_port_enable <= (others => '1');
                nr_87_bus_port_enable <= (others => '1');
                nr_88_bus_port_enable <= (others => '1');
-               nr_89_bus_port_enable <= "1111";
+               nr_89_bus_port_enable <= (others => '1');
             
             end if;
 
@@ -4620,50 +5062,32 @@ begin
             nr_a8_esp_gpio0_en <= '0';
             nr_a9_esp_gpio0 <= '1';
 
-            if machine_type_config = '1' or reset_hard = '1' then
+            nr_b8_divmmc_ep_0 <= X"83";
+            nr_b9_divmmc_ep_valid_0 <= X"01";
+            nr_ba_divmmc_ep_timing_0 <= X"00";
+            nr_bb_divmmc_ep_1 <= X"CD";
+
+            nr_c0_im2_vector <= (others => '0');
+            nr_c0_stackless_nmi <= '0';
+            nr_c0_int_mode_pulse_0_im2_1 <= '0';
+            
+            nr_c4_int_en_0_expbus <= '1';
+            
+            nr_c6_int_en_2_654 <= (others => '0');
+            nr_c6_int_en_2_210 <= (others => '0');
+
+            nr_cc_dma_int_en_0_7 <= '0';
+            nr_cc_dma_int_en_0_10 <= (others => '0');
+            nr_cd_dma_int_en_1 <= (others => '0');
+            nr_ce_dma_int_en_2_654 <= (others => '0');
+            nr_ce_dma_int_en_2_210 <= (others => '0');
+            
+            nr_d8_io_trap_fdc_en <= '0';
+            
+            if nr_03_config_mode = '1' then
                bootrom_en <= '1';
             end if;
-            
-            if reset_hard = '1' then
 
-               nr_02_bus_reset <= '0';
-               
-               nr_03_machine_type <= "000";
-               nr_04_romram_bank <= (others => '0');
-               nr_03_user_dt_lock <= '0';
-
-               nr_06_internal_speaker_beep <= '0';
-               nr_06_divmmc_automap_en <= '0';
-               nr_06_button_m1_nmi_en <= '0';
-
-               nr_08_psg_stereo_mode <= '0';
-               nr_08_internal_speaker_en <= '1';
-               nr_08_dac_en <= '0';
-               nr_08_port_ff_rd_en <= '0';
-               nr_08_psg_turbosound_en <= '0';
-               nr_08_keyboard_issue2 <= '0';
-               
-               nr_09_psg_mono <= (others => '0');
-               nr_09_hdmi_audio_disable <= '0';
-               
-               nr_0a_mf_type <= "00";
-               nr_0a_mouse_button_reverse <= '0';
-               nr_0a_mouse_dpi <= "01";
-               
-               nr_10_flashboot <= '0';
-               
-               nr_81_expbus_ula_override <= '0';
-               nr_81_expbus_nmi_debounce_disable <= '0';
-               nr_81_expbus_clken <= '0';
-               nr_81_expbus_speed <= (others => '0');
-
-               nr_85_internal_port_reset_type <= '1';
-               nr_89_bus_port_reset_type <= '1';
-               
-               nr_8a_bus_port_propagate <= (others => '0');
-         
-            end if;
-         
          elsif nr_wr_en = '1' then
          
             case nr_wr_reg is
@@ -4688,36 +5112,37 @@ begin
                   
                   nr_03_user_dt_lock <= nr_03_user_dt_lock xor nr_wr_dat(3);
                   
-                  if machine_type_config = '1' then
+                  if nr_03_config_mode = '1' then
                      case nr_wr_dat(2 downto 0) is
                         when "001"  => nr_03_machine_type <= "001";
                         when "010"  => nr_03_machine_type <= "010";
                         when "011"  => nr_03_machine_type <= "011";
                         when "100"  => nr_03_machine_type <= "100";
-                        when others => nr_03_machine_type <= "000";
+                        when others => null;
                      end case;
+                  end if;
+               
+                  if nr_wr_dat(2 downto 0) = "111" then
+                     nr_03_config_mode <= '1';
+                  elsif nr_wr_dat(2 downto 0) /= "000" then
+                     nr_03_config_mode <= '0';
                   end if;
                
                when X"04" =>
                   nr_04_romram_bank <= nr_wr_dat(6 downto 0);
                
                when X"05" =>
-                  io_mode_en <= nr_05_io_mode;
-                  
-                  if nr_05_io_mode = '0' then
-                     nr_05_joy0 <= nr_05_joymode_0;
-                     nr_05_joy1 <= nr_05_joymode_1;
-                  end if;
-
+                  nr_05_joy0 <= nr_wr_dat(3) & nr_wr_dat(7 downto 6);
+                  nr_05_joy1 <= nr_wr_dat(1) & nr_wr_dat(5 downto 4);
 --                nr_05_we <= '1';
 
                when X"06" =>
                   nr_06_hotkey_cpu_speed_en <= nr_wr_dat(7);
                   nr_06_internal_speaker_beep <= nr_wr_dat(6);
                   nr_06_hotkey_5060_en <= nr_wr_dat(5);
-                  nr_06_divmmc_automap_en <= nr_wr_dat(4);
+                  nr_06_button_drive_nmi_en <= nr_wr_dat(4);
                   nr_06_button_m1_nmi_en <= nr_wr_dat(3);
-                  if machine_type_config = '1' then
+                  if nr_03_config_mode = '1' then
                      nr_06_ps2_mode <= nr_wr_dat(2);
                   end if;
                   nr_06_psg_mode <= nr_wr_dat(1 downto 0);
@@ -4738,25 +5163,34 @@ begin
                when X"09" =>
                   nr_09_psg_mono <= nr_wr_dat(7 downto 5);
                   nr_09_sprite_tie <= nr_wr_dat(4);
-                  nr_09_hdmi_audio_disable <= nr_09_hdmi_audio_disable or nr_wr_dat(2);
+                  nr_09_hdmi_audio_en <= not nr_wr_dat(2);
 --                nr_09_we <= '1';
 
                when X"0A" =>
-                  if machine_type_config = '1' then
+                  if nr_03_config_mode = '1' then
                      nr_0a_mf_type <= nr_wr_dat(7 downto 6);
                   end if;
+                  nr_0a_divmmc_automap_en <= nr_wr_dat(4);
                   nr_0a_mouse_button_reverse <= nr_wr_dat(3);
                   nr_0a_mouse_dpi <= nr_wr_dat(1 downto 0);
                
-               when X"10" =>
-                  nr_10_flashboot <= nr_wr_dat(7);
-                  if machine_type_config = '1' then
-                     nr_10_coreid <= nr_wr_dat(4 downto 0);
-                  end if;
-               
+               when X"0B" =>
+                  nr_0b_joy_iomode_en <= nr_wr_dat(7);
+                  nr_0b_joy_iomode <= nr_wr_dat(5 downto 4);
+                  nr_0b_joy_iomode_0 <= nr_wr_dat(0);
+
+--             when X"10" =>
+--                nr_10_we <= '1';
+
                when X"11" =>
-                  if machine_type_config = '1' then
-                     nr_11_video_timing <= nr_wr_dat(2 downto 0);
+                  if nr_03_config_mode = '1' then
+                     if nr_wr_dat(2 downto 0) = "111" then
+                        nr_11_video_timing <= "000";
+                     elsif g_video_inc = "10" then
+                        nr_11_video_timing <= "00" & nr_wr_dat(0);
+                     else
+                        nr_11_video_timing <= nr_wr_dat(2 downto 0);
+                     end if;
                   end if;
                
                when X"12" =>
@@ -4831,6 +5265,9 @@ begin
                   if nr_wr_dat(3) = '1' then
                      nr_1b_tm_clip_idx <= "00";
                   end if;
+
+--             when X"20" =>
+--                nr_20_we <= '1';
 
                when X"22" =>
 --                nr_22_we <= '1';
@@ -5117,9 +5554,85 @@ begin
 --             when X"B1" =>
 --                read only extended keys
 
---             when X"C6" =>
---                nr_c6_we <= '1';
+--             when X"B2" =>
+--                read md pad extended buttons
 
+               when X"B8" =>
+                  nr_b8_divmmc_ep_0 <= nr_wr_dat(7 downto 0);
+
+               when X"B9" =>
+                  nr_b9_divmmc_ep_valid_0 <= nr_wr_dat(7 downto 0);
+               
+               when X"BA" =>
+                  nr_ba_divmmc_ep_timing_0 <= nr_wr_dat(7 downto 0);
+               
+               when X"BB" =>
+                  nr_bb_divmmc_ep_1 <= nr_wr_dat(7 downto 0);
+
+               when X"C0" =>
+                  nr_c0_im2_vector <= nr_wr_dat(7 downto 5);
+                  nr_c0_stackless_nmi <= nr_wr_dat(3);
+                  nr_c0_int_mode_pulse_0_im2_1 <= nr_wr_dat(0);
+
+--             when X"C2" =>
+--                nr_c2_we <= '1';
+
+--             when X"C3" =>
+--                nr_c3_we <= '1';
+
+               when X"C4" =>
+--                nr_c4_we <= '1';
+                  nr_c4_int_en_0_expbus <= nr_wr_dat(7);
+                  nr_22_line_interrupt_en <= nr_wr_dat(1);
+                  
+--             when X"C5" =>
+--                nr_c5_we <= '1';
+
+               when X"C6" =>
+                  nr_c6_int_en_2_654 <= nr_wr_dat(6) & nr_wr_dat(5) & nr_wr_dat(4);
+                  nr_c6_int_en_2_210 <= nr_wr_dat(2) & nr_wr_dat(1) & nr_wr_dat(0);
+               
+--             when X"C8" =>
+--                nr_c8_we <= '1';
+
+--             when X"C9" =>
+--                nr_c9_we <= '1';
+               
+--             when X"CA" =>
+--                nr_ca_we <= '1';
+
+               when X"CC" =>
+                  nr_cc_dma_int_en_0_7 <= nr_wr_dat(7);
+                  nr_cc_dma_int_en_0_10 <= nr_wr_dat(1 downto 0);
+                  
+               when X"CD" =>
+                  nr_cd_dma_int_en_1 <= nr_wr_dat;
+                  
+               when X"CE" =>
+                  nr_ce_dma_int_en_2_654 <= nr_wr_dat(6 downto 4);
+                  nr_ce_dma_int_en_2_210 <= nr_wr_dat(2 downto 0);
+               
+               when X"D8" =>
+                  nr_d8_io_trap_fdc_en <= nr_wr_dat(0);
+               
+--             when X"D9" =>
+--                nr_d9_we <= '1';
+
+--             when X"DA" =>
+--                nr_da_we <= '1';
+
+--             when X"F0" =>
+--                nr_f0_we <= '1';
+
+--             when X"F8" =>
+--                nr_f8_we <= '1';
+
+--             when X"F9" =>
+--                nr_f9_we <= '1';
+
+--             when X"FA" =>
+--                nr_fa_we <= '1';
+               
 --             when X"FF" =>
 --                reserved for ula+
 
@@ -5133,19 +5646,83 @@ begin
       end if;
    end process;
 
-   -- Machine Type
-
-   machine_type_config <= '1' when nr_03_machine_type = "000" else '0';   -- 48k config
-   machine_type_48 <= '1' when nr_03_machine_type(2 downto 1) = "00" else '0';   -- 48k
-   machine_type_128 <= '1' when nr_03_machine_type = "010" or nr_03_machine_type = "100" else '0';  -- 128k or pentagon
-   machine_type_p3 <= '1' when nr_03_machine_type = "011" else '0';   -- +3
-
-   -- Machine Timing
+   gen_coreid_23: if (g_board_issue /= 2) generate
    
-   machine_timing_48 <= '1' when nr_03_machine_timing(2 downto 1) = "00" else '0';
-   machine_timing_128 <= '1' when nr_03_machine_timing = "010" else '0';
-   machine_timing_p3 <= '1' when nr_03_machine_timing = "011" else '0';
-   machine_timing_pentagon <= '1' when nr_03_machine_timing = "100" else '0';
+      -- ZX Next Issue 2 or Issue 3 PCB
+
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_10_we = '1' then
+               nr_10_flashboot <= nr_wr_dat(7);     
+               if nr_03_config_mode = '1' then
+                  nr_10_coreid <= nr_wr_dat(4 downto 0);
+               end if;
+            end if;
+         end if;
+      end process;
+   
+   end generate;
+   
+   gen_coreid_4: if (g_board_issue = 2) generate
+
+      -- ZX Next Issue 4 PCB
+
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_10_we = '1' then
+               nr_10_flashboot <= nr_wr_dat(7);      
+               if nr_03_config_mode = '1' and nr_wr_dat(4) = '0' and nr_wr_dat(3 downto 0) /= "1111" then
+                  nr_10_coreid <= '0' & nr_wr_dat(3 downto 0);
+               end if;
+            end if;
+         end if;
+      end process;
+   
+   end generate;
+
+   -- Machine Type (roms present)
+
+   process (nr_03_machine_type)
+   begin
+   
+      machine_type_48 <= '0';
+      machine_type_128 <= '0';
+      machine_type_p3 <= '0';
+      
+      case nr_03_machine_type is
+         when "000" | "001" =>
+            machine_type_48 <= '1';
+         when "010" | "100" =>
+            machine_type_128 <= '1';
+         when others =>
+            machine_type_p3 <= '1';
+      end case;
+      
+   end process;
+
+   -- Machine Timing (video frame, contention patterns)
+   
+   process (eff_nr_03_machine_timing)
+   begin
+   
+      machine_timing_48 <= '0';
+      machine_timing_128 <= '0';
+      machine_timing_p3 <= '0';
+      machine_timing_pentagon <= '0';
+      
+      if eff_nr_03_machine_timing(2) = '1' then
+         machine_timing_pentagon <= '1';
+      elsif eff_nr_03_machine_timing(1 downto 0) = "10" then
+         machine_timing_128 <= '1';
+      elsif eff_nr_03_machine_timing(1 downto 0) = "11" then
+         machine_timing_p3 <= '1';
+      else
+         machine_timing_48 <= '1';
+      end if;
+   
+   end process;
    
    -- CPU Speed
    
@@ -5156,7 +5733,7 @@ begin
             nr_07_cpu_speed <= "00";
          elsif nr_07_we = '1' then
             nr_07_cpu_speed <= nr_wr_dat(1 downto 0);
-         elsif hotkey_cpu_speed = '1' and nr_06_hotkey_cpu_speed_en = '1' then
+         elsif hotkey_cpu_speed = '1' then
             nr_07_cpu_speed <= nr_07_cpu_speed + 1;
          end if;
       end if;
@@ -5165,17 +5742,7 @@ begin
    process (i_CLK_CPU)
    begin
       if rising_edge(i_CLK_CPU) then
-         if reset_hard = '1' then
-         
-            cpu_speed <= "00";
-            eff_nr_08_contention_disable <= '0';
-            
-            expbus_eff_en <= '0';
-            expbus_eff_disable_io <= '0';
-            expbus_eff_disable_mem <= '0';
-            expbus_eff_clken <= '0';
-            
-         elsif reset_soft = '1' then
+         if reset = '1' then
          
             cpu_speed <= "00";
             eff_nr_08_contention_disable <= '0';
@@ -5211,9 +5778,11 @@ begin
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
-         if nr_05_we = '1' then
+         if nr_03_machine_timing(2) = '1' then
+            nr_05_5060 <= '0';   -- Pentagon is always 50 Hz
+         elsif nr_05_we = '1' then
             nr_05_5060 <= nr_wr_dat(2);
-         elsif hotkey_5060 = '1' and nr_06_hotkey_5060_en = '1' then
+         elsif hotkey_5060 = '1' then
             nr_05_5060 <= not nr_05_5060;
          end if;
       end if;
@@ -5233,9 +5802,7 @@ begin
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
-         if reset_hard = '1' then
-            nr_09_scanlines <= (others => '0');
-         elsif nr_09_we = '1' then
+         if nr_09_we = '1' then
             nr_09_scanlines <= nr_wr_dat(1 downto 0);
          elsif hotkey_scanlines = '1' then
             nr_09_scanlines <= nr_09_scanlines + 1;
@@ -5247,15 +5814,6 @@ begin
    -- Read Registry
    --
 
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if reset = '1' then
-            nr_02_reset_type <= reset_hard & reset_soft;
-         end if;
-      end if;
-   end process;
-   
    process (i_CLK_CPU)
    begin
       if falling_edge(i_CLK_CPU) then
@@ -5276,7 +5834,7 @@ begin
                port_253b_dat <= std_logic_vector(g_version);
          
             when X"02" =>
-               port_253b_dat <= nr_02_bus_reset & "00000" & nr_02_reset_type;
+               port_253b_dat <= nr_02_bus_reset & "00" & nr_02_iotrap & nr_02_generate_mf_nmi & nr_02_generate_divmmc_nmi & nr_02_reset_type(1 downto 0);
          
             when X"03" =>
                port_253b_dat <= nr_palette_sub_idx & nr_03_machine_timing & nr_03_user_dt_lock & nr_03_machine_type;
@@ -5285,7 +5843,7 @@ begin
                port_253b_dat <= nr_05_joy0(1 downto 0) & nr_05_joy1(1 downto 0) & nr_05_joy0(2) & eff_nr_05_5060 & nr_05_joy1(2) & eff_nr_05_scandouble_en;
 
             when X"06" =>
-               port_253b_dat <= nr_06_hotkey_cpu_speed_en & nr_06_internal_speaker_beep & nr_06_hotkey_5060_en & nr_06_divmmc_automap_en & nr_06_button_m1_nmi_en & nr_06_ps2_mode & nr_06_psg_mode;
+               port_253b_dat <= nr_06_hotkey_cpu_speed_en & nr_06_internal_speaker_beep & nr_06_hotkey_5060_en & nr_06_button_drive_nmi_en & nr_06_button_m1_nmi_en & nr_06_ps2_mode & nr_06_psg_mode;
 
             when X"07" =>
                port_253b_dat <= "00" & cpu_speed & "00" & nr_07_cpu_speed;
@@ -5294,16 +5852,22 @@ begin
                port_253b_dat <= (not port_7ffd_locked) & eff_nr_08_contention_disable & nr_08_psg_stereo_mode & nr_08_internal_speaker_en & nr_08_dac_en & nr_08_port_ff_rd_en & nr_08_psg_turbosound_en & nr_08_keyboard_issue2;
 
             when X"09" =>
-               port_253b_dat <= nr_09_psg_mono & nr_09_sprite_tie & '0' & nr_09_hdmi_audio_disable & eff_nr_09_scanlines;
+               port_253b_dat <= nr_09_psg_mono & nr_09_sprite_tie & '0' & (not nr_09_hdmi_audio_en) & eff_nr_09_scanlines;
 
             when X"0A" =>
-               port_253b_dat <= nr_0a_mf_type & "00" & nr_0a_mouse_button_reverse & '0' & nr_0a_mouse_dpi;
+               port_253b_dat <= nr_0a_mf_type & '0' & nr_0a_divmmc_automap_en & nr_0a_mouse_button_reverse & '0' & nr_0a_mouse_dpi;
+
+            when X"0B" =>
+               port_253b_dat <= nr_0b_joy_iomode_en & '0' & nr_0b_joy_iomode & "000" & nr_0b_joy_iomode_0;
  
             when X"0E" =>
                port_253b_dat <= std_logic_vector(g_sub_version);
+            
+            when X"0F" =>
+               port_253b_dat <= "0000" & std_logic_vector(g_board_issue);
          
             when X"10" =>
-               port_253b_dat <= "000000" & i_SPKEY_BUTTONS(1 downto 0);
+               port_253b_dat <= '0' & nr_10_coreid & i_SPKEY_BUTTONS(1 downto 0);
          
             when X"11" =>
                port_253b_dat <= "00000" & nr_11_video_timing;
@@ -5366,9 +5930,12 @@ begin
          
             when X"1F" =>
                port_253b_dat <= std_logic_vector(cvc(7 downto 0));
+ 
+            when X"20" =>
+               port_253b_dat <= im2_int_status(0) & im2_int_status(11) & "00" & im2_int_status(6 downto 3);
          
             when X"22" =>
-               port_253b_dat <= (not ula_int_n) & "0000" & port_ff_interrupt_disable & nr_22_line_interrupt_en & nr_23_line_interrupt(8);
+               port_253b_dat <= (not pulse_int_n) & "0000" & port_ff_interrupt_disable & nr_22_line_interrupt_en & nr_23_line_interrupt(8);
          
             when X"23" =>
                port_253b_dat <= nr_23_line_interrupt(7 downto 0);
@@ -5589,10 +6156,79 @@ begin
             when X"B1" =>
                -- DELETE EDIT BREAK INV TRU GRAPH CAPSLOCK EXTEND
                port_253b_dat <= i_KBD_EXTENDED_KEYS(12) & i_KBD_EXTENDED_KEYS(7 downto 2) & i_KBD_EXTENDED_KEYS(0);
+            
+            when X"B2" =>
+               port_253b_dat <= i_JOY_RIGHT(10 downto 8) & i_JOY_RIGHT(11) & i_JOY_LEFT(10 downto 8) & i_JOY_LEFT(11);
+            
+            when X"B8" =>
+               port_253b_dat <= nr_b8_divmmc_ep_0;
+            
+            when X"B9" =>
+               port_253b_dat <= nr_b9_divmmc_ep_valid_0;
+            
+            when X"BA" =>
+               port_253b_dat <= nr_ba_divmmc_ep_timing_0;
+            
+            when X"BB" =>
+               port_253b_dat <= nr_bb_divmmc_ep_1;
 
-            when X"C6" =>
+            when X"C0" =>
+               port_253b_dat <= nr_c0_im2_vector & '0' & nr_c0_stackless_nmi & z80_im_mode & nr_c0_int_mode_pulse_0_im2_1;
+
+            when X"C2" =>
+               port_253b_dat <= nr_c2_retn_address_lsb;
+               
+            when X"C3" =>
+               port_253b_dat <= nr_c3_retn_address_msb;
+
+            when X"C4" =>
+               port_253b_dat <= nr_c4_int_en_0_expbus & "00000" & ula_int_en;
+            
+            when X"C5" =>
                port_253b_dat <= ctc_int_en;
             
+            when X"C6" =>
+               port_253b_dat <= '0' & nr_c6_int_en_2_654 & '0' & nr_c6_int_en_2_210;
+            
+            when X"C8" =>
+               port_253b_dat <= "000000" & im2_int_status(0) & im2_int_status(11);
+               
+            when X"C9" =>
+               port_253b_dat <= im2_int_status(10 downto 3);
+               
+            when X"CA" =>
+               port_253b_dat <= '0' & im2_int_status(13) & im2_int_status(2) & im2_int_status(2) & '0' & im2_int_status(12) & im2_int_status(1) & im2_int_status(1);
+            
+            when X"CC" =>
+               port_253b_dat <= nr_cc_dma_int_en_0_7 & "00000" & nr_cc_dma_int_en_0_10;
+            
+            when X"CD" =>
+               port_253b_dat <= nr_cd_dma_int_en_1;
+            
+            when X"CE" =>
+               port_253b_dat <= '0' & nr_ce_dma_int_en_2_654 & '0' & nr_ce_dma_int_en_2_210;
+            
+            when X"D8" =>
+               port_253b_dat <= "0000000" & nr_d8_io_trap_fdc_en;
+            
+            when X"D9" =>
+               port_253b_dat <= nr_d9_iotrap_write;
+            
+            when X"DA" =>
+               port_253b_dat <= "000000" & nr_da_iotrap_cause;
+
+            when X"F0" =>
+               port_253b_dat <= nr_f0_xdev_cmd;
+
+            when X"F8" =>
+               port_253b_dat <= '0' & nr_f8_xadc_daddr;
+
+            when X"F9" =>
+               port_253b_dat <= nr_f9_xadc_d0;
+            
+            when X"FA" =>
+               port_253b_dat <= nr_fa_xadc_d1;
+
             when others =>
                port_253b_dat <= (others => '0');
 
@@ -5602,33 +6238,36 @@ begin
    end process;
 
    ------------------------------------------------------------
-   -- PS/2 KEYMAP & HOT KEYS ----------------------------------
+   -- PS/2 KEYMAP & KEY JOYSTICK & HOT KEYS -------------------
    ------------------------------------------------------------
    
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
          if nr_28_we = '1' then
+            nr_keymap_sel <= nr_wr_dat(7);
             nr_keymap_addr(8) <= nr_wr_dat(0);
          elsif nr_29_we = '1' then
             nr_keymap_addr(7 downto 0) <= nr_wr_dat;
-         elsif nr_keymap_we = '1' then
+         elsif nr_2b_we = '1' then
             nr_keymap_addr <= nr_keymap_addr + 1;
          end if;
       end if;
    end process;
 
-   process (i_CLK_28)
-   begin
-      if rising_edge(i_CLK_28) then
-         if nr_2a_we = '1' then
-            nr_keymap_dat_msb <= nr_wr_dat(0);
-         end if;
-      end if;
-   end process;
+-- process (i_CLK_28)
+-- begin
+--    if rising_edge(i_CLK_28) then
+--       if nr_2a_we = '1' then
+--          nr_keymap_dat_msb <= nr_wr_dat(0);
+--       end if;
+--    end if;
+-- end process;
 
-   nr_keymap_we <= nr_2b_we;
-   nr_keymap_dat <= nr_keymap_dat_msb & nr_wr_dat;
+   nr_keymap_we <= nr_2b_we and not nr_keymap_sel;
+   nr_joymap_we <= nr_2b_we and nr_keymap_sel;
+-- nr_keymap_dat <= nr_keymap_dat_msb & nr_wr_dat;
+   nr_keymap_dat <= nr_wr_dat;
 
    -- Hot Keys
    
@@ -5640,20 +6279,43 @@ begin
       end if;
    end process;
 
-   hotkey_hard_reset <= hotkeys_0(1) and not hotkeys_1(1);                         -- F1
-   hotkey_scandouble <= hotkeys_0(2) and not hotkeys_1(2);                         -- F2
-   hotkey_5060 <= hotkeys_0(3) and not hotkeys_1(3);                               -- F3
-   hotkey_soft_reset <= hotkeys_0(4) and not hotkeys_1(4);                         -- F4
-   hotkey_expbus_enable <= hotkeys_0(5) and not hotkeys_1(5);                      -- F5
-   hotkey_expbus_disable <= hotkeys_0(6) and not hotkeys_1(6);                     -- F6
-   hotkey_scanlines <= hotkeys_0(7) and not hotkeys_1(7);                          -- F7
-   hotkey_cpu_speed <= hotkeys_0(8) and not hotkeys_1(8);                          -- F8
-   hotkey_m1 <= hotkeys_0(9) and not hotkeys_1(9);                                 -- F9
-   hotkey_drive <= hotkeys_0(10) and not hotkeys_1(10) and port_divmmc_io_en;      -- F10
+   gen_reset: if (g_machine_id /= X"FA") generate
 
-   nr_02_soft_reset <= hotkey_soft_reset or (nr_02_we and nr_wr_dat(0));
+      -- ZX Spectrum Next Core
+      
+      hotkey_hard_reset <= hotkeys_0(1) and not hotkeys_1(1);                                     -- F1
+      hotkey_scandouble <= hotkeys_0(2) and not hotkeys_1(2);                                     -- F2
+      hotkey_5060 <= hotkeys_0(3) and not hotkeys_1(3) and nr_06_hotkey_5060_en;                  -- F3
+      hotkey_soft_reset <= hotkeys_0(4) and not hotkeys_1(4);                                     -- F4
+      hotkey_expbus_enable <= hotkeys_0(5) and not hotkeys_1(5) and nr_06_hotkey_cpu_speed_en;    -- F5
+      hotkey_expbus_disable <= hotkeys_0(6) and not hotkeys_1(6) and nr_06_hotkey_cpu_speed_en;   -- F6
+      hotkey_scanlines <= hotkeys_0(7) and not hotkeys_1(7);                                      -- F7
+      hotkey_cpu_speed <= hotkeys_0(8) and not hotkeys_1(8) and nr_06_hotkey_cpu_speed_en;        -- F8
+      hotkey_m1 <= hotkeys_0(9) and not hotkeys_1(9);                                             -- F9
+      hotkey_drive <= hotkeys_0(10) and not hotkeys_1(10) and port_divmmc_io_en;                  -- F10
+
+   end generate;
+   
+   gen_reset_ab: if (g_machine_id = X"FA") generate
+
+      -- Anti Brick Core
+      
+      hotkey_hard_reset <= '0';                                                                   -- F1
+      hotkey_scandouble <= hotkeys_0(2) and not hotkeys_1(2);                                     -- F2
+      hotkey_5060 <= hotkeys_0(3) and not hotkeys_1(3);                                           -- F3
+      hotkey_soft_reset <= '0';                                                                   -- F4
+      hotkey_expbus_enable <= '0';                                                                -- F5
+      hotkey_expbus_disable <= '0';                                                               -- F6
+      hotkey_scanlines <= '0';                                                                    -- F7
+      hotkey_cpu_speed <= '0';                                                                    -- F8
+      hotkey_m1 <= '0';                                                                           -- F9
+      hotkey_drive <= '0';                                                                        -- F10
+
+   end generate;
+
+   nr_02_soft_reset <= (hotkey_soft_reset and not nr_03_config_mode) or (nr_02_we and nr_wr_dat(0));
    nr_02_hard_reset <= hotkey_hard_reset or (nr_02_we and nr_wr_dat(1));
-
+   
    ------------------------------------------------------------
    -- AUDIO ---------------------------------------------------
    ------------------------------------------------------------
@@ -5676,6 +6338,7 @@ begin
       psg_reg_addr_i    => port_fffd_wr,
       psg_reg_wr_i      => port_bffd_wr,
       psg_d_i           => cpu_do,
+      psg_d_o_reg_i     => port_bff5,
       psg_d_o           => psg_dat,
       
       mono_mode_i       => nr_09_psg_mono,
@@ -5783,8 +6446,8 @@ begin
    -- todo: switch to signed audio
    -- todo: power of two volume adjustment on all inputs (?)
    
-   port_fe_mic_final <= port_fe_mic xor i_AUDIO_EAR xor pi_fe_ear;
-   internal_speaker_beep_exclusive <= nr_06_internal_speaker_beep and nr_08_internal_speaker_en;
+   beep_mic_final <= port_fe_mic xor i_AUDIO_EAR xor pi_fe_ear;
+   beep_spkr_excl <= nr_06_internal_speaker_beep and nr_08_internal_speaker_en;
    
    audio_mixer_mod: entity work.audio_mixer
    port map
@@ -5794,8 +6457,9 @@ begin
       
       -- beeper and tape
       
-      ear_i          => port_fe_ear and not internal_speaker_beep_exclusive,
-      mic_i          => port_fe_mic_final and not internal_speaker_beep_exclusive,
+      exc_i          => beep_spkr_excl,
+      ear_i          => port_fe_ear,
+      mic_i          => beep_mic_final,
       
       -- ay
       
@@ -5973,90 +6637,72 @@ begin
    
    -- changes to video timing occur during vsync
    
-   video_timing_change <= '1' when (eff_nr_05_5060 /= nr_05_5060) or (eff_nr_05_scandouble_en /= nr_05_scandouble_en) or ((eff_nr_03_machine_timing /= nr_03_machine_timing) and (nr_11_video_timing /= "111")) else '0';
+   video_timing_change <= '1' when (eff_nr_05_5060 /= nr_05_5060) or (eff_nr_05_scandouble_en /= nr_05_scandouble_en) or (eff_nr_03_machine_timing(2 downto 1) /= nr_03_machine_timing(2 downto 1)) else '0';
    
    process (i_CLK_7)
    begin
       if rising_edge(i_CLK_7) then
-         if reset_hard = '1' then
-            video_timing_change_d <= '1';
-         elsif rgb_vsync_n_o = '0' and video_timing_change = '1' then
+         if video_frame_sync = '1' then
             eff_nr_05_5060 <= nr_05_5060;
+            eff_nr_09_scanlines <= nr_09_scanlines;
             eff_nr_05_scandouble_en <= nr_05_scandouble_en;
             eff_nr_03_machine_timing <= nr_03_machine_timing;
-            video_timing_change_d <= '1';
+            video_timing_change_d <= video_timing_change;
          else
             video_timing_change_d <= '0';
          end if;
       end if;
    end process;
-   
-   process (i_CLK_7)
-   begin
-      if rising_edge(i_CLK_7) then
-         if rgb_vsync_n_o = '0' then
-            eff_nr_09_scanlines <= nr_09_scanlines;
-         end if;
-      end if;
-   end process;
 
-   ula_int_en <= (not port_ff_interrupt_disable) & nr_22_line_interrupt_en;
+   ula_int_en <= nr_22_line_interrupt_en & (not port_ff_interrupt_disable);
 
    timing_mod: entity work.zxula_timing
-   port map (
-      clock_i        => i_CLK_7,
-      clock_x4_i     => i_CLK_28,
-      reset_conter_i => video_timing_change_d,
-      mode_i         => eff_nr_03_machine_timing,
-      video_timing_i => nr_11_video_timing,
-      vf50_60_i      => eff_nr_05_5060,
-      cu_offset_i    => nr_64_copper_offset,
-      hcount_o       => hc,
-      vcount_o       => vc,
-      phcount_o      => phc,
-      whcount_o      => whc,
-      wvcount_o      => wvc,
-      cvcount_o      => cvc,
-      sc_o           => sc,
-      hsync_n_o      => rgb_hsync_n,
-      vsync_n_o      => rgb_vsync_n,
-      hblank_n_o     => rgb_hblank_n,
-      vblank_n_o     => rgb_vblank_n,
-      int_n_o        => ula_int_pulse_n,
-      lint_ctrl_i    => ula_int_en,
-      lint_line_i    => nr_23_line_interrupt
+   port map
+   (
+      -- 28 MHz domain
+      
+      i_CLK_28           => i_CLK_28,
+      
+      i_50_60            => eff_nr_05_5060,
+      i_timing           => eff_nr_03_machine_timing,
+      
+      i_cu_offset        => nr_64_copper_offset,
+      
+      -- 7 MHz doman
+   
+      i_CLK_7            => i_CLK_7,
+
+      o_blank_n          => rgb_blank_n,
+      o_hsync_n          => rgb_hsync_n,
+      o_vsync_n          => rgb_vsync_n,
+      o_frame_sync       => video_frame_sync,
+      
+      o_hdmi_pixel_en    => hdmi_pixel_en,
+      o_hdmi_frame_lock  => hdmi_frame_lock,
+      
+      o_hc_ula           => hc,
+      o_vc_ula           => vc,
+      o_vc_cu            => cvc,
+      
+      o_whc              => whc,
+      o_wvc              => wvc,
+      
+      o_phc              => phc,
+      
+      -- 28 MHz domain
+      
+      o_sc               => sc,
+
+      i_inten_ula_n      => port_ff_interrupt_disable,
+      
+      i_inten_line       => nr_22_line_interrupt_en,
+      i_int_line         => nr_23_line_interrupt,
+      
+      -- 7 MHz domain
+      
+      o_int_ula          => ula_int_pulse,
+      o_int_line         => line_int_pulse
    );
-
-   -- interrupt pulse duration is fixed at ~32 cpu cycles and must be asserted immediately
-
-   process (i_CLK_28)
-   begin
-      -- int is sampled on rising edge of cpu clock
-      if falling_edge(i_CLK_28) then
-         if reset = '1' then
-            ula_int_n <= '1';
-         elsif ula_int_n = '1' then
-            if ula_int_pulse_n = '0' or ctc_int_n = '0' then
-               ula_int_n <= '0';
-            end if;
-         elsif ula_int_count_end = '1' then
-            ula_int_n <= '1';
-         end if;
-      end if;
-   end process;
-   
-   ula_int_count_end <= '1' when ula_int_count = "11111" else '0';
-   
-   process (i_CLK_CPU)
-   begin
-      if rising_edge(i_CLK_CPU) then
-         if ula_int_n = '1' then
-            ula_int_count <= (others => '0');
-         elsif ula_int_count_end = '0' then
-            ula_int_count <= ula_int_count + 1;
-         end if;
-      end if;
-   end process;
 
    --
    -- VIDEO PIPELINE STAGE 0 - gather pixels
@@ -6179,10 +6825,10 @@ begin
 
          layer_priorities_1 <= layer_priorities_0;
 
-         rgb_vsync_n_1 <= rgb_vsync_n;
-         rgb_vblank_n_1 <= rgb_vblank_n;
-         rgb_hblank_n_1 <= rgb_hblank_n;
-         rgb_hsync_n_1 <= rgb_hsync_n;
+         rgb_vsync_n_1   <= rgb_vsync_n;
+         rgb_blank_n_1   <= rgb_blank_n;
+         rgb_hsync_n_1   <= rgb_hsync_n;
+         hdmi_pixel_en_1 <= hdmi_pixel_en;
       
       end if;
    end process;
@@ -6380,10 +7026,10 @@ begin
       
          layer_priorities_2 <= layer_priorities_1;
          
-         rgb_vsync_n_2 <= rgb_vsync_n_1;
-         rgb_vblank_n_2 <= rgb_vblank_n_1;
-         rgb_hblank_n_2 <= rgb_hblank_n_1;
-         rgb_hsync_n_2 <= rgb_hsync_n_1;
+         rgb_vsync_n_2   <= rgb_vsync_n_1;
+         rgb_blank_n_2   <= rgb_blank_n_1;
+         rgb_hsync_n_2   <= rgb_hsync_n_1;
+         hdmi_pixel_en_2 <= hdmi_pixel_en_1;
       
       end if;
    end process;
@@ -6654,8 +7300,6 @@ begin
       end case;
 
    end process;
-
-   rgb_out_2a <= (others => '0') when (rgb_vblank_n_2 = '0' or rgb_hblank_n_2 = '0') else rgb_out_2;
    
    --
    -- VIDEO PIPELINE STAGE 3 - generate rgb signals
@@ -6671,15 +7315,10 @@ begin
          rgb_vsync_n_4 <= rgb_vsync_n_3;
          rgb_vsync_n_3 <= rgb_vsync_n_2;
 
-         rgb_vblank_n_6 <= rgb_vblank_n_5;
-         rgb_vblank_n_5 <= rgb_vblank_n_4;
-         rgb_vblank_n_4 <= rgb_vblank_n_3;
-         rgb_vblank_n_3 <= rgb_vblank_n_2;
-
-         rgb_hblank_n_6 <= rgb_hblank_n_5;
-         rgb_hblank_n_5 <= rgb_hblank_n_4;
-         rgb_hblank_n_4 <= rgb_hblank_n_3;
-         rgb_hblank_n_3 <= rgb_hblank_n_2;
+         rgb_blank_n_6 <= rgb_blank_n_5;
+         rgb_blank_n_5 <= rgb_blank_n_4;
+         rgb_blank_n_4 <= rgb_blank_n_3;
+         rgb_blank_n_3 <= rgb_blank_n_2;
 
          rgb_hsync_n_6 <= rgb_hsync_n_5;
          rgb_hsync_n_5 <= rgb_hsync_n_4;
@@ -6689,29 +7328,215 @@ begin
          rgb_out_6 <= rgb_out_5;
          rgb_out_5 <= rgb_out_4;
          rgb_out_4 <= rgb_out_3;
-         rgb_out_3 <= rgb_out_2a;
+         rgb_out_3 <= rgb_out_2;
+         
+         hdmi_pixel_en_6 <= hdmi_pixel_en_5;
+         hdmi_pixel_en_5 <= hdmi_pixel_en_4;
+         hdmi_pixel_en_4 <= hdmi_pixel_en_3;
+         hdmi_pixel_en_3 <= hdmi_pixel_en_2;
 
       end if;
    end process;
 
-   process (i_CLK_28)
+   process (i_CLK_14)
    begin
-      if falling_edge(i_CLK_28) then
+      if rising_edge(i_CLK_14) then
       
-         rgb_vsync_n_7 <= rgb_vsync_n_6;
-         rgb_vblank_n_7 <= rgb_vblank_n_6;
-         rgb_hblank_n_7 <= rgb_hblank_n_6;
-         rgb_hsync_n_7 <= rgb_hsync_n_6;
-         rgb_out_7 <= rgb_out_6;
-      
+         rgb_vsync_n_o <= rgb_vsync_n_6;
+         rgb_blank_n_o <= rgb_blank_n_6;
+         rgb_hsync_n_o <= rgb_hsync_n_6;
+         rgb_csync_n_o <= rgb_vsync_n_6 and rgb_hsync_n_6;
+         
+         if rgb_blank_n_6 = '1' then
+            rgb_out_o  <= rgb_out_6;
+         else
+            rgb_out_o  <= (others => '0');
+         end if;
+         
+         hdmi_pixel_en_7 <= hdmi_pixel_en_6;
+         
       end if;
    end process;
    
-   rgb_vsync_n_o <= rgb_vsync_n_7;
-   rgb_vblank_n_o <= rgb_vblank_n_7;
-   rgb_hblank_n_o <= rgb_hblank_n_7;
-   rgb_hsync_n_o <= rgb_hsync_n_7;
-   rgb_out_o <= rgb_out_7;
-   rgb_csync_n_o <= rgb_vsync_n_7 and rgb_hsync_n_7;
+   -- total delay is four * CLK_7 cycles
+
+   ------------------------------------------------------------
+   -- XILINX PERIPHERALS --------------------------------------
+   ------------------------------------------------------------
+
+   gen_xper_23: if (g_board_issue /= 2) generate
+   
+      -- ZX Next Issue 2 or Issue 3 PCB
+
+      nr_f0_xdev_cmd <= (others => '0');
+      nr_f8_xadc_den <= '0';
+      nr_f8_xadc_daddr <= (others => '0');
+      nr_f8_xadc_dwe <= '0';
+      nr_f9_xadc_d0 <= (others => '0');
+      nr_fa_xadc_d1 <= (others => '0');
+   
+      xdna_load <= '0';
+      xdna_shift <= '0';
+      xadc_reset <= '0';
+      xadc_convst <= '0';
+   
+   end generate;
+   
+   gen_xper_4: if (g_board_issue = 2) generate
+
+      -- ZX Next Issue 4 PCB
+
+      -- XDEV CMD
+      
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if reset = '1' then
+               nr_f0_select <= '1';
+            elsif nr_f0_we = '1' then
+               nr_f0_select <= nr_wr_dat(7);
+            end if;
+         end if;
+      end process;
+      
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if reset = '1' then
+               nr_f0_xdna_en <= '0';
+               nr_f0_xadc_en <= '0';
+            elsif nr_f0_we = '1' and nr_wr_dat(7 downto 6) = "11" then
+               nr_f0_xdna_en <= nr_wr_dat(0) and not nr_wr_dat(1);
+               nr_f0_xadc_en <= nr_wr_dat(1) and not nr_wr_dat(0);
+            end if;
+         end if;
+      end process;
+      
+      nr_f0_rd <= '1' when nr_register = X"F0" else '0';
+      
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_f0_select = '1' then
+               nr_f0_xdev_cmd <= "100000" & nr_f0_xadc_en & nr_f0_xdna_en;
+            elsif nr_f0_xdna_en = '1' then
+               nr_f0_xdev_cmd <= "0000000" & i_XDNA_DO;
+            elsif nr_f0_xadc_en = '1' then
+               nr_f0_xdev_cmd <= '0' & i_XADC_BUSY & "0000" & nr_f0_xadc_eoc & nr_f0_xadc_eos;
+            else
+               nr_f0_xdev_cmd <= (others => '0');
+            end if;
+         end if;
+      end process;
+
+      -- XDNA Unique FPGA Identifier
+
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_f0_select = '0' and nr_f0_xdna_en = '1' and nr_f0_we = '1' and nr_wr_dat(7) = '0'  then
+               xdna_load <= '1';
+            else
+               xdna_load <= '0';
+            end if;
+         end if;
+      end process;
+      
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_f0_select = '0' and nr_f0_xdna_en = '1' and nr_f0_rd = '1' and port_253b_rd_fe = '1' then
+               xdna_shift <= '1';
+            else
+               xdna_shift <= '0';
+            end if;
+         end if;
+      end process;
+
+      -- XADC Analog to Digital Converter
+
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_f0_select = '0' and nr_f0_xadc_en = '1' and nr_f0_we = '1' and nr_wr_dat(7) = '0' then
+               xadc_reset <= nr_wr_dat(6);
+               xadc_convst <= nr_wr_dat(0) and not nr_wr_dat(6);
+            else
+               xadc_reset <= '0';
+               xadc_convst <= '0';
+            end if;
+         end if;
+      end process;
+
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if reset = '1' then
+               nr_f0_xadc_eoc <= '0';
+            elsif i_XADC_EOC = '1' then
+               nr_f0_xadc_eoc <= '1';
+            elsif nr_f0_select = '0' and nr_f0_xadc_en = '1' and nr_f0_rd = '1' and port_253b_rd_fe = '1' then
+               nr_f0_xadc_eoc <= '0';
+            end if;
+         end if;
+      end process;
+      
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if reset = '1' then
+               nr_f0_xadc_eos <= '0';
+            elsif i_XADC_EOS = '1' then
+               nr_f0_xadc_eos <= '1';
+            elsif nr_f0_select = '0' and nr_f0_xadc_en = '1' and nr_f0_rd = '1' and port_253b_rd_fe = '1' then
+               nr_f0_xadc_eos <= '0';
+            end if;
+         end if;
+      end process;
+
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_f8_we = '1' then
+               nr_f8_xadc_dwe <= nr_wr_dat(7);
+               nr_f8_xadc_daddr <= nr_wr_dat(6 downto 0);
+            end if;
+         end if;
+      end process;
+      
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_f8_we = '1' then
+               nr_f8_xadc_den <= '1';
+            else
+               nr_f8_xadc_den <= '0';
+            end if;
+         end if;
+      end process;
+
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_f9_we = '1' then
+               nr_f9_xadc_d0 <= nr_wr_dat;
+            elsif i_XADC_DRDY = '1' and nr_f8_xadc_dwe = '0' then
+               nr_f9_xadc_d0 <= i_XADC_DO(7 downto 0);
+            end if;
+         end if;
+      end process;
+
+      process (i_CLK_28)
+      begin
+         if rising_edge(i_CLK_28) then
+            if nr_fa_we = '1' then
+               nr_fa_xadc_d1 <= nr_wr_dat;
+            elsif i_XADC_DRDY = '1' and nr_f8_xadc_dwe = '0' then
+               nr_fa_xadc_d1 <= i_XADC_DO(15 downto 8);
+            end if;
+         end if;
+      end process;
+
+   end generate;
 
 end architecture;

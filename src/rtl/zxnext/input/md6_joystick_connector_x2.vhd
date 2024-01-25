@@ -1,6 +1,6 @@
 
 -- Sega Mega Drive Pads x 2
--- Copyright 2020 Victor Trucco and Alvin Albrecht
+-- Copyright 2020, 2022 Victor Trucco and Alvin Albrecht
 --
 -- This file is part of the ZX Spectrum Next Project
 -- <https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/tree/master/cores>
@@ -30,7 +30,7 @@ entity md6_joystick_connector_x2 is
       i_reset        : in std_logic;
       
       i_CLK_28       : in std_logic;
-      i_CLK_EN       : in std_logic;
+      i_CLK_EN       : in std_logic;    -- every ~4.57us
       
       i_joy_1_n      : in std_logic;
       i_joy_2_n      : in std_logic;
@@ -40,44 +40,45 @@ entity md6_joystick_connector_x2 is
       i_joy_9_n      : in std_logic;
       
       i_io_mode_en      : in std_logic;
-      i_io_mode_lr      : in std_logic;
       i_io_mode_pin_7   : in std_logic;
       
       o_joy_7        : out std_logic;
       o_joy_select   : out std_logic;   -- 0 = left connector, 1 = right connector
 
-      o_joy_left     : out std_logic_vector(10 downto 0);   -- active high  X Z Y START A C B U D L R
-      o_joy_right    : out std_logic_vector(10 downto 0)    -- active high  X Z Y START A C B U D L R
+      o_joy_left     : out std_logic_vector(11 downto 0);   -- active high  MODE X Z Y START A C B U D L R
+      o_joy_right    : out std_logic_vector(11 downto 0)    -- active high  MODE X Z Y START A C B U D L R
    );
 end entity;
 
 architecture rtl of md6_joystick_connector_x2 is
 
    signal io_mode          : std_logic := '0';
-   signal io_mode_lr       : std_logic := '0';
    signal io_mode_change   : std_logic;
 
    -- https://github.com/jonthysell/SegaController/wiki/How-To-Read-Sega-Controllers
    
-   -- The state machine consists of 64 states for a period of ~4.27ms
-   -- 48 states are padding to allow the md controllers time to reset between reads ~3.2ms
-
-   signal state      : std_logic_vector(5 downto 0);
-   signal state_next : std_logic_vector(5 downto 0);
+   -- The state machine consists of 512 states for a period of ~2.34ms
+   -- 496 states are padding to allow the md controllers time to reset between reads ~2.26ms
    
-   -- X X S S 7 J
+   -- Pulse width of the select signal must be < ~15us otherwise 6-button controllers won't work
+   -- Here it's ~9.14us
+
+   signal state      : std_logic_vector(8 downto 0);
+   signal state_next : std_logic_vector(8 downto 0);
+   
+   -- X X X X X S S 7 J
    --
-   --  XX = padding for md pad reset
+   --   X = padding for md pad reset
    -- SS7 = eight states in state machine, 7 = select on pin 7
    --   J = connector being read: left = 0, right = 1
    
    signal state_rest : std_logic;
    
-   signal joy_left_n_six_button_n   : std_logic;
-   signal joy_left_n                : std_logic_vector(10 downto 0);
+   signal joy_left_six_button_n     : std_logic;
+   signal joy_left_n                : std_logic_vector(11 downto 0);
    
-   signal joy_right_n_six_button_n  : std_logic;
-   signal joy_right_n               : std_logic_vector(10 downto 0);
+   signal joy_right_six_button_n    : std_logic;
+   signal joy_right_n               : std_logic_vector(11 downto 0);
    
    signal joy_raw                   : std_logic_vector(5 downto 0);
    
@@ -89,22 +90,23 @@ begin
    begin
       if rising_edge(i_CLK_28) then
          io_mode <= i_io_mode_en;
-         io_mode_lr <= i_io_mode_lr;
       end if;
    end process;
    
-   io_mode_change <= (i_io_mode_en and not io_mode) or (io_mode and not i_io_mode_en);
+   io_mode_change <= io_mode xor i_io_mode_en;
 
    -- md pad state machine
    
-   state_rest <= state(5) or state(4) or (state(3) and state(2));
+   state_rest <= state(8) or state(7) or state(6) or state(5) or state(4);
    state_next <= state + 1;
    
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
-         if i_reset = '1' or io_mode = '1' then
-            state <= "110000";
+         if i_reset = '1' or io_mode_change = '1' then
+            state <= "111110000";
+         elsif io_mode = '1' then
+            state <= "1111100" & state_next(1 downto 0);
          elsif i_CLK_EN = '1' then
             state <= state_next;
          end if;
@@ -112,7 +114,7 @@ begin
    end process;
 
    o_joy_7 <= (state_rest or state(1)) when io_mode = '0' else i_io_mode_pin_7;
-   o_joy_select <= state(0) when io_mode = '0' else io_mode_lr;
+   o_joy_select <= state(0) when io_mode = '0' else state(1);
    
    -- build md pad state
    
@@ -121,14 +123,19 @@ begin
    process (i_CLK_28)
    begin
       if rising_edge(i_CLK_28) then
-         if i_CLK_EN = '1' and state_rest = '0' then
+         if i_reset = '1' or io_mode_change = '1' then
+         
+            joy_left_n <= (others => '1');
+            joy_right_n <= (others => '1');
+         
+         elsif i_CLK_EN = '1' and state_rest = '0' then
          
             case state(3 downto 0) is
             
                when "000" & '0' =>
-                  joy_left_n_six_button_n <= '1';
+                  joy_left_six_button_n <= '1';
                   joy_left_n <= (others => '1');
-                  joy_right_n_six_button_n <= '1';
+                  joy_right_six_button_n <= '1';
                   joy_right_n <= (others => '1');
                
                when "010" & '0' =>
@@ -148,19 +155,19 @@ begin
                   joy_right_n(5 downto 0) <= joy_raw;
                
                when "100" & '0' =>
-                  joy_left_n_six_button_n <= i_joy_1_n or i_joy_2_n;
+                  joy_left_six_button_n <= i_joy_1_n or i_joy_2_n;
                
                when "100" & '1' =>
-                  joy_right_n_six_button_n <= i_joy_1_n or i_joy_2_n;
+                  joy_right_six_button_n <= i_joy_1_n or i_joy_2_n;
                
                when "101" & '0' =>
-                  if joy_left_n_six_button_n = '0' then
-                     joy_left_n(10 downto 8) <= i_joy_3_n & i_joy_1_n & i_joy_2_n;
+                  if joy_left_six_button_n = '0' then
+                     joy_left_n(11 downto 8) <= i_joy_4_n & i_joy_3_n & i_joy_1_n & i_joy_2_n;
                   end if;
                
                when "101" & '1' =>
-                  if joy_right_n_six_button_n = '0' then
-                     joy_right_n(10 downto 8) <= i_joy_3_n & i_joy_1_n & i_joy_2_n;
+                  if joy_right_six_button_n = '0' then
+                     joy_right_n(11 downto 8) <= i_joy_4_n & i_joy_3_n & i_joy_1_n & i_joy_2_n;
                   end if;
                   
                when others => null;
@@ -177,10 +184,11 @@ begin
          if i_reset = '1' or io_mode_change = '1' then
             o_joy_left <= (others => '0');
             o_joy_right <= (others => '0');
-         elsif io_mode = '1' then
-            o_joy_left(5 downto 0) <= not joy_raw;
-            o_joy_right(5 downto 0) <= not joy_raw;
-         elsif state_rest = '1' then
+         elsif io_mode = '1' and state(1 downto 0) = "01" then
+            o_joy_left <= "000000" & not joy_raw;
+         elsif io_mode = '1' and state(1 downto 0) = "11" then
+            o_joy_right <= "000000" & not joy_raw;
+         elsif io_mode = '0' and state_rest = '1' then
             o_joy_left <= not joy_left_n;
             o_joy_right <= not joy_right_n;
          end if;

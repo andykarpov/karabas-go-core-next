@@ -54,8 +54,10 @@ begin
    process (clk_i)
    begin
       if rising_edge(clk_i) then
-         if reset_i = '1' or button_i /= INITIAL_STATE or button_db = INITIAL_STATE then
+         if reset_i = '1' then
             counter <= (others => '0');
+         elsif button_i /= INITIAL_STATE then
+		    counter <= (others => '0');
          elsif clk_en_i = '1' and counter(COUNTER_SIZE) = '0' then
             counter <= counter + 1;
          end if;
