@@ -1,12 +1,12 @@
 {
     "id": "zxnext",
     "name": "ZX Spectrum Next",
-    "build": "24012514",
+    "build": "24012521",
     "bitstream": "karabas_go.bin",
     "visible": true,
     "type": "none",
     "order": 5,
-    "eeprom_bank": 255,
+    "eeprom_bank": 2,
     "rtc_mode": 1,
     "roms": [],
     "osd": [

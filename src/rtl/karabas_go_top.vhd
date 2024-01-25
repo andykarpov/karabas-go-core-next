@@ -1853,7 +1853,7 @@ port map(
 	JOY_L => joy_l,
 	JOY_R => joy_r,
 	
-	RTC_A =>  rtc_a,
+	RTC_A =>  "00" & rtc_a(5 downto 0),
 	RTC_DI => rtc_di,
 	RTC_DO => rtc_do,
 	RTC_CS => '1',
