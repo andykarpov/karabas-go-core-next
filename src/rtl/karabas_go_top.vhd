@@ -32,7 +32,6 @@
 -- FDD: implement via bus ?
 -- FT812: ?
 -- OSD: think about it
--- RTC: emulate i2c slave ds1307 chip
 -- GS: add to the zxbus ?
 -- Bridge second UART to USB!
 
@@ -526,6 +525,12 @@ architecture rtl of karabas_go is
 	signal hid_ms_b					: std_logic_vector(2 downto 0);
 	signal hid_ms_upd 				: std_logic;
 	signal ms_present 				: std_logic := '0';
+	
+	-- rtc
+	signal rtc_a 						: std_logic_vector(7 downto 0);
+	signal rtc_di 						: std_logic_vector(7 downto 0);
+	signal rtc_do 						: std_logic_vector(7 downto 0);
+	signal rtc_wr						: std_logic;
 
 	-- mcu related
 	signal mcu_busy 					: std_logic := '0';
@@ -1366,11 +1371,11 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
 
    -- i2c
    
-   i2c_scl_io <= '0' when zxn_i2c_scl_n_o = '0' else 'Z';
-   i2c_sda_io <= '0' when zxn_i2c_sda_n_o = '0' else 'Z';
+--   i2c_scl_io <= '0' when zxn_i2c_scl_n_o = '0' else 'Z';
+--   i2c_sda_io <= '0' when zxn_i2c_sda_n_o = '0' else 'Z';
 
-   zxn_i2c_scl_n_i <= i2c_scl_io;
-   zxn_i2c_sda_n_i <= i2c_sda_io;
+--   zxn_i2c_scl_n_i <= i2c_scl_io;
+--   zxn_i2c_sda_n_i <= i2c_sda_io;
 
    -- spi sd card
    
@@ -1848,11 +1853,11 @@ port map(
 	JOY_L => joy_l,
 	JOY_R => joy_r,
 	
-	RTC_A =>  "11111111", -- todo: emulate i2c clock :)
-	RTC_DI => "11111111",
-	RTC_DO => open,
-	RTC_CS => '0',
-	RTC_WR_N => '1',
+	RTC_A =>  rtc_a,
+	RTC_DI => rtc_di,
+	RTC_DO => rtc_do,
+	RTC_CS => '1',
+	RTC_WR_N => not rtc_wr,
 	
 	ROMLOADER_ACTIVE => open,
 	ROMLOAD_ADDR => open,
@@ -1864,6 +1869,22 @@ port map(
 	
 	BUSY => mcu_busy
 	
+);
+
+U_RTC: entity work.ds1307
+port map (
+	clk => clk_28,
+	reset_n => not areset,
+
+	scl_i => zxn_i2c_scl_n_o,
+	sda_i => zxn_i2c_sda_n_o,
+	scl_o => zxn_i2c_scl_n_i,
+	sda_o => zxn_i2c_sda_n_i,
+	
+	rtc_a => rtc_a,
+	rtc_di => rtc_di,
+	rtc_do => rtc_do,
+	rtc_wr => rtc_wr
 );
 
 U_HID: entity work.hid_parser

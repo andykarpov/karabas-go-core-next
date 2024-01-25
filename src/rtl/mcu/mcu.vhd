@@ -311,7 +311,7 @@ begin
 	end process;
 
 	--------------------------------------------------------------------------
-	-- mc146818a emulation	
+	-- mc146818a emulation (rtc_type = 0)
 	-- http://web.stanford.edu/class/cs140/projects/pintos/specs/mc146818a.pdf
 	--------------------------------------------------------------------------
 	-- 
@@ -332,6 +332,24 @@ begin
 	-- 001110 = 0E = Register E - memory, 50 bytes
 	-- ...
 	-- 011111 = 3F = Register 3F
+
+	--------------------------------------------------------------------------
+	-- ds1307 emulation (rtc_type = 1)
+	-- https://www.analog.com/media/en/technical-documentation/data-sheets/ds1307.pdf
+	--------------------------------------------------------------------------
+	-- 
+	-- 000000 = 00 = Seconds       bcd (0-59) (bit 7: CH, bit 6..4: 10SEC, bit 3..0: SEC)
+	-- 000001 = 01 = Minutes       bcd (0-59) (bit 7: 0,  bit 6..4: 10MIN, bit: 3..0 MIN)
+	-- 000010 = 02 = Hours         bcd (1-12+AM, 0-23) (bit 7: 0, bit 6: 12/24, bit 5: AM/PM or 10HOUR, bit 4: 10HOUR, bit 3..0: HOUR) 
+   -- 000011 = 03 = Day of Week   bcd (1-7, sunday = 1) (bit 7-3: 0, bit 2..0: DOW)
+   -- 000100 = 04 = Date of Month bcd (1-31) (bit 7..6: 0, bit 5..4: 10DATE, bit 3..0: DATE)
+   -- 000101 = 05 = Month         bcd (1-12) (bit 7..5: 0, bit 4: 10MONTH, bit 3..0: MONTH)
+	-- 000110 = 06 = Year          bcd (0-99) (bit 7..4: 10YEAR, bit 3..0: YEAR)
+	-- 000111 = 07 = Control       (bit 7: OUT, bit 6..5: 0, bit 4: SQWE, bit 3..2: 0, bit 1: RS1, bit 0: RS0)
+	-- 001000 = 08 = Register 08 - memory, 56 bytes
+	-- ...
+	-- 011111 = 3F = Register 3F
+
 	
 	-- memory for rtc registers
 	URTC: entity work.rtc 

@@ -1,12 +1,13 @@
 {
     "id": "zxnext",
     "name": "ZX Spectrum Next",
-    "build": "24012503",
+    "build": "24012514",
     "bitstream": "karabas_go.bin",
     "visible": true,
     "type": "none",
     "order": 5,
     "eeprom_bank": 255,
+    "rtc_mode": 1,
     "roms": [],
     "osd": [
         {"type": "T", "bits": 1, "name": "Hard Reset", "options": null, "default": 0, "hotkey": "F1"},
