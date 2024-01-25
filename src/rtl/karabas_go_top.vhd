@@ -16,7 +16,7 @@
 --                                                                                 #             # #             # 
 -- https://github.com/andykarpov/karabas-go                                        ############### ############### 
 --
--- FPGA ZX Spectrum Next core 3.01.08 for Karabas-Go
+-- FPGA ZX Spectrum Next core 3.02.01 for Karabas-Go
 --
 -- @author Andy Karpov <https://github.com/andykarpov>
 -- @author Oleh Starychenko <https://github.com/solegstar>
@@ -35,7 +35,6 @@
 -- RTC: emulate i2c slave ds1307 chip
 -- GS: add to the zxbus ?
 -- Bridge second UART to USB!
--- Upgrade to the latest zxnext version from git
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -47,9 +46,12 @@ use UNISIM.VComponents.all;
 
 entity karabas_go is
    generic (
-      g_machine_id      : unsigned(7 downto 0)  := X"0A";   -- 10 = ZX Spectrum Next
-      g_version         : unsigned(7 downto 0)  := X"31";   -- 3.01
-      g_sub_version     : unsigned(7 downto 0)  := X"08"    -- .08
+      g_machine_id      : unsigned(7 downto 0)  := X"0A";   -- X"0A" = ZX Spectrum Next, X"FA" = Anti Brick (reset disabled, bootrom)
+      g_video_def       : unsigned(2 downto 0)  := "000";   -- video mode default (0-6, vga-0 & vga-1 produce hdmi if hdmi module is included)
+      g_version         : unsigned(7 downto 0)  := X"32";   -- 3.02
+      g_sub_version     : unsigned(7 downto 0)  := X"01";   -- .01
+      g_board_issue     : unsigned(3 downto 0)  := X"0";    -- issue 2 (see nextreg 0x0F)
+      g_video_inc       : unsigned(1 downto 0)  := "01"     -- bit 1 = 1 to include HDMI module, bit 0 = 1 to include VGA module (if changed see zxnext_pins_issue2.ucf)
    );
    port ( 
 		CLK_50MHZ 			: in   	STD_LOGIC;
@@ -130,21 +132,39 @@ end entity;
 
 architecture rtl of karabas_go is
 
-   component pll_top
+   component system_pll
    port
    (
+      RST         : in std_logic;
       SSTEP       : in std_logic;
       STATE       : in std_logic_vector(2 downto 0);
-      RST         : in std_logic;
+      CLKDRP      : in std_logic;
+      SRDY_N      : out std_logic;
       CLKIN       : in std_logic;
-      SRDY        : out std_logic;
-  
+      
       CLK0OUT     : out std_logic;
       CLK1OUT     : out std_logic;
       CLK2OUT     : out std_logic;
       CLK3OUT     : out std_logic;
-      CLK4OUT     : out std_logic;
-      CLK5OUT     : out std_logic
+      CLK4OUT     : out std_logic
+   );
+   end component;
+	
+	component system_pll_reduced
+   port
+   (
+      RST         : in std_logic;
+      SSTEP       : in std_logic;
+      STATE       : in std_logic;
+      CLKDRP      : in std_logic;
+      SRDY_N      : out std_logic;
+      CLKIN       : in std_logic;
+      
+      CLK0OUT     : out std_logic;
+      CLK1OUT     : out std_logic;
+      CLK2OUT     : out std_logic;
+      CLK3OUT     : out std_logic;
+      CLK4OUT     : out std_logic
    );
    end component;
 
@@ -154,6 +174,7 @@ architecture rtl of karabas_go is
 	signal bus_addr_o        		: std_logic_vector(15 downto 0)  := (others => 'Z');
 	signal bus_data_io       		: std_logic_vector( 7 downto 0)  := (others => 'Z');
 	signal bus_int_n_io      		: std_logic                      := 'Z';
+	signal bus_int_in_i				: std_logic 							:= '1'; -- unfixed
 	signal bus_nmi_n_i       		: std_logic								:= '1';
 	signal bus_ramcs_i       		: std_logic 							:= '0';
 	signal bus_romcs_i       		: std_logic 							:= '0';
@@ -163,26 +184,22 @@ architecture rtl of karabas_go is
 	signal bus_m1_n_o        		: std_logic                      := 'Z';
 	signal bus_mreq_n_o      		: std_logic                      := 'Z';
 	signal bus_rd_n_o        		: std_logic                      := 'Z';
+	signal bus_rd_n_io				: std_logic 							:= 'Z';
 	signal bus_wr_n_o        		: std_logic                      := 'Z';
 	signal bus_rfsh_n_o      		: std_logic                      := 'Z';
 	signal bus_busreq_n_i    		: std_logic 							:= '0';
 	signal bus_busack_n_o    		: std_logic                      := 'Z';
 	signal bus_iorqula_n_i   		: std_logic 							:= '0';
+	signal bus_y_o						: std_logic;
+	signal bus_ramcs_io				: std_logic 							:= '0';
 
 	-- virtual PI GPIO
 	signal accel_io          		: std_logic_vector(27 downto 0)  := (others => 'Z');
 
-	signal ear_port_i_q           : std_logic;
+   signal ear_port_i_q           : std_logic;
+   signal ear_port_i_qq          : std_logic;
+   signal ear_port_i_qqq         : std_logic;
    
-   signal bus_data_i_0           : std_logic_vector(7 downto 0);
-   signal bus_int_n_i_0          : std_logic := '1';
-   signal bus_nmi_n_i_0          : std_logic := '1';
--- signal bus_ramcs_i_0          : std_logic;
-   signal bus_romcs_i_0          : std_logic;
-   signal bus_wait_n_i_0         : std_logic;
-   signal bus_busreq_n_i_0       : std_logic;
-   signal bus_iorqula_n_i_0      : std_logic;
-
    signal bus_data_i_q           : std_logic_vector(7 downto 0);
    signal bus_int_n_i_q          : std_logic := '1';
    signal bus_nmi_n_i_q          : std_logic := '1';
@@ -192,22 +209,21 @@ architecture rtl of karabas_go is
    signal bus_wait_n_i_q         : std_logic;
    signal bus_busreq_n_i_q       : std_logic;
    signal bus_iorqula_n_i_q      : std_logic;
-
-   signal esp_gpio0_i_0          : std_logic;
-   signal esp_gpio2_i_0          : std_logic;
-   signal esp_rx_i_0             : std_logic;
+   signal bus_rd_n_i_q           : std_logic;
 
    signal esp_gpio0_i_q          : std_logic;
    signal esp_gpio2_i_q          : std_logic;
    signal esp_rx_i_q             : std_logic;
 
-   signal accel_i_0              : std_logic_vector(27 downto 0);
    signal accel_i_q              : std_logic_vector(27 downto 0);
+	
+	signal i2c_scl_io					: std_logic := 'Z';
+	signal i2c_sda_io					: std_logic := 'Z';
 
    -- resets
    
    signal video_timing_change    : std_logic;
-   signal actual_video_mode      : std_logic_vector(2 downto 0)   := "000";
+   signal actual_video_mode      : std_logic_vector(2 downto 0)   := std_logic_vector(g_video_def);
    signal poweron_counter        : std_logic_vector(4 downto 0)   := (others => '1');
    signal reset_poweron          : std_logic;
    
@@ -224,7 +240,7 @@ architecture rtl of karabas_go is
    signal reset_hard             : std_logic;
    signal reset_soft             : std_logic;
    signal reset                  : std_logic;
-
+   
    signal bus_reset_n_q          : std_logic;
    signal bus_reset_noise_n      : std_logic;
    signal bus_reset_db_n         : std_logic;
@@ -238,26 +254,51 @@ architecture rtl of karabas_go is
    
    -- clocks
    
+   signal CLK_50                 : std_logic;
+   signal clk_28_rdy_n           : std_logic;
+   
    signal CLK_28                 : std_logic;
    signal CLK_28_n               : std_logic;
    signal CLK_14                 : std_logic;
    signal CLK_7                  : std_logic;
-   signal CLK_HDMI               : std_logic;
-   signal CLK_HDMI_n             : std_logic;
+   signal CLK_28x5_n             : std_logic;
    
-   signal CLK_3M5_CONT           : std_logic;
+   signal reset_hdmi             : std_logic;
+   signal clk_hdmi_valid         : std_logic;
+   
+   signal CLK_HDMIx5             : std_logic;
+   signal CLK_HDMIx5_n           : std_logic;
+   signal CLK_HDMI               : std_logic;   
+   
+   signal clk7_re_7              : std_logic;
+   signal clk7_re_28             : std_logic;
+   signal clk_28_sc              : std_logic_vector(1 downto 0);
+   signal clk_3m5_cont           : std_logic;
+   signal cpu_clk_s              : std_logic;
    signal CLK_i0                 : std_logic;
    signal CLK_i1                 : std_logic;
    signal CLK_CPU                : std_logic;
    
    signal clk_28_div             : std_logic_vector(17 downto 0);
    
-   signal CLK_28_PSG_EN          : std_logic;
-   signal CLK_28_DEBOUNCE_EN     : std_logic;
+   signal clkdiv_3_0             : std_logic;
+   signal clkdiv_6_4             : std_logic;
+   signal clkdiv_8_7             : std_logic;
+   signal clkdiv_17_9            : std_logic;
+
+   signal CLK_28_PSG_EN          : std_logic := '0';
+   signal CLK_28_DEBOUNCE_EN     : std_logic := '0';
+   signal CLK_28_MOUSE_109KHZ    : std_logic := '0';
+   signal CLK_28_PS2_218KHZ      : std_logic := '0';
+   signal CLK_28_JOY_EN          : std_logic := '0';
+   signal CLK_28_MEMBRANE_EN     : std_logic := '0';
+
    
    signal zxn_clock_contend      : std_logic;
    signal zxn_clock_lsb          : std_logic;
    signal zxn_cpu_speed          : std_logic_vector(1 downto 0);
+   signal zxn_cpu_speed_eff      : std_logic_vector(1 downto 0) := "00";
+   signal zxn_cpu_speed_eff_28   : std_logic := '0';
    
    -- sram interface
    
@@ -266,28 +307,21 @@ architecture rtl of karabas_go is
    signal sram_addr              : std_logic_vector(20 downto 0);
    signal sram_cs_n              : std_logic_vector(3 downto 0);
    signal sram_data_H            : std_logic;
-   signal sram_rd                : std_logic;
+   signal sram_rd_n              : std_logic;
    
-   signal sram_cs_n_active       : std_logic_vector(3 downto 0)   := (others => '1');
    signal sram_oe_n_active       : std_logic                      := '0';
-   signal sram_addr_active       : std_logic_vector(18 downto 0)  := (others => '0');
    signal sram_data_active       : std_logic_vector(15 downto 0)  := (others => '0');
    signal sram_port_a_active     : std_logic                      := '0';
    signal sram_port_b_active     : std_logic                      := '0';
    signal sram_data_H_active     : std_logic                      := '0';
    
-   signal sram_data_in           : std_logic_vector(15 downto 0);
-   signal sram_port_a_read       : std_logic;
-   signal sram_port_b_read       : std_logic;
-   signal sram_data_H_read       : std_logic;
    signal sram_data_in_byte      : std_logic_vector(7 downto 0);
-   
    signal sram_port_a_dat        : std_logic_vector(7 downto 0);
    signal sram_port_b_dat        : std_logic_vector(7 downto 0);
-   signal sram_port_a_do         : std_logic_vector(7 downto 0);
-   signal sram_port_b_do         : std_logic_vector(7 downto 0);
-   
-   signal sram_we_line           : std_logic_vector(3 downto 0)   := (others => '0');
+
+   signal sram_we_line           : std_logic_vector(2 downto 0)   := "100";
+
+	-- virtual sram ports
 
 	signal ram_addr_o        		: std_logic_vector(18 downto 0)  := (others => '0');
 	signal ram_data_i       		: std_logic_vector(15 downto 0)  := (others => 'Z');
@@ -299,19 +333,18 @@ architecture rtl of karabas_go is
    
    -- audio
    
-   signal mic_port               : std_logic;
-   
-   signal zxn_hdmi_audio         : std_logic;
-   signal zxn_speaker_en         : std_logic;
-   signal zxn_speaker_beep       : std_logic;
-   signal zxn_tape_mic           : std_logic;
-
    signal zxn_audio_ear          : std_logic;
    signal zxn_audio_mic          : std_logic;
+
+   signal zxn_audio_L            : std_logic_vector(12 downto 0);
+   signal zxn_audio_R            : std_logic_vector(12 downto 0);
+	
+	signal zxn_speaker_excl			: std_logic;
    
-   signal zxn_audio_L_pre        : std_logic_vector(12 downto 0);
-   signal zxn_audio_R_pre        : std_logic_vector(12 downto 0);
-   
+	-- video : hdmi
+	
+	signal zxn_hdmi_reset         : std_logic;
+	
    -- video : vga
    
    signal ha_value               : integer range 0 to 2047;
@@ -328,44 +361,25 @@ architecture rtl of karabas_go is
    signal zxn_rgb_hs_n           : std_logic;
    signal zxn_rgb_vs_n           : std_logic;
    signal zxn_video_scanlines    : std_logic_vector(1 downto 0);
-   signal zxn_rgb_vb_n           : std_logic;
-   signal zxn_rgb_hb_n           : std_logic;
+   signal zxn_rgb_blank_n        : std_logic;
    signal zxn_machine_timing     : std_logic_vector(2 downto 0);
    signal zxn_video_scandouble_en   : std_logic;
-   
-   signal zxn_video_50_60        : std_logic;
+	signal zxn_video_50_60        : std_logic;
    
    -- buttons, joystick, mouse, keyboard
    
    signal zxn_buttons            : std_logic_vector(1 downto 0);
    
-   signal rgb_hs_n_dly           : std_logic_vector(1 downto 0);
-   signal CLK_28_HSYNC_EN        : std_logic;
-   
-   signal io_mode_pin_7          : std_logic;
-   
-   signal zxn_joy_left           : std_logic_vector(10 downto 0);
-   signal zxn_joy_right          : std_logic_vector(10 downto 0);
-   
-   signal zxn_joy_io_mode_en     : std_logic_vector(1 downto 0);
-   signal zxn_joy_io_mode_lr     : std_logic;
-   signal zxn_joy_io_mode_pin_7  : std_logic;
-
-   signal zxn_ps2_mode           : std_logic;
-   signal zxn_mouse_control      : std_logic_vector(2 downto 0);
+   signal zxn_joy_left           : std_logic_vector(11 downto 0);
+   signal zxn_joy_right          : std_logic_vector(11 downto 0);
+	
    signal zxn_mouse_x            : std_logic_vector(7 downto 0);
    signal zxn_mouse_y            : std_logic_vector(7 downto 0);
    signal zxn_mouse_wheel        : std_logic_vector(7 downto 0);
-   signal zxn_mouse_button       : std_logic_vector(2 downto 0);
-   
-   signal zxn_keymap_addr        : std_logic_vector(8 downto 0);
-   signal zxn_keymap_dat         : std_logic_vector(8 downto 0);
-   signal zxn_keymap_we          : std_logic;
+   signal zxn_mouse_button       : std_logic_vector(2 downto 0);	
    
    signal zxn_key_row            : std_logic_vector(7 downto 0);
-   signal key_row_filtered       : std_logic_vector(7 downto 0);
    signal zxn_key_col            : std_logic_vector(4 downto 0);
-   
    signal zxn_cancel_extended_entries  : std_logic;
    signal zxn_extended_keys      : std_logic_vector(15 downto 0);
    
@@ -380,6 +394,7 @@ architecture rtl of karabas_go is
    signal zxn_spi_ss_sd1_n       : std_logic;
    signal zxn_spi_sck            : std_logic;
    signal zxn_spi_mosi           : std_logic;
+	signal sd_miso_q              : std_logic := '0';
    
    signal zxn_spi_ss_flash_n     : std_logic;
    
@@ -387,6 +402,8 @@ architecture rtl of karabas_go is
    signal zxn_uart0_rx           : std_logic;
 
    -- expansion bus
+   
+   signal expbus_type            : std_logic := '1';  -- 0 = fixed, 1 = unmodified
    
    signal zxn_bus_di             : std_logic_vector(7 downto 0);
    signal zxn_bus_int_n          : std_logic;
@@ -407,6 +424,7 @@ architecture rtl of karabas_go is
    signal zxn_cpu_busak_n        : std_logic;
    signal zxn_cpu_halt_n         : std_logic;
    signal zxn_cpu_rfsh_n         : std_logic;
+   signal zxn_cpu_ieo            : std_logic;
    
    signal o_zxn_cpu_a            : std_logic_vector(15 downto 0) := (others => '0');
    signal o_zxn_cpu_do           : std_logic_vector(7 downto 0) := (others => '0');
@@ -419,13 +437,14 @@ architecture rtl of karabas_go is
    signal o_zxn_cpu_busak_n      : std_logic := '1';
    signal o_zxn_cpu_halt_n       : std_logic := '1';
    signal o_zxn_cpu_rfsh_n       : std_logic := '1';
+   signal o_zxn_cpu_ieo          : std_logic := '1';
+   signal o_zxn_bus_clken        : std_logic := '0';
+   signal o_zxn_bus_inten        : std_logic := '0';
+   signal o_zxn_bus_y            : std_logic := '0';
    
    signal zxn_bus_en             : std_logic;
    signal zxn_bus_clken          : std_logic;
-   signal zxn_bus_clk            : std_logic;
-   
    signal bus_clk_cpu            : std_logic;
-   signal bus_clk_cpu_en_n       : std_logic;
    
    signal zxn_bus_nmi_debounce_disable  : std_logic;
 
@@ -457,7 +476,7 @@ architecture rtl of karabas_go is
 
    signal zxn_ram_a_addr         : std_logic_vector(20 downto 0);
    signal zxn_ram_a_req          : std_logic;
-   signal zxn_ram_a_rd           : std_logic;
+   signal zxn_ram_a_rd_n         : std_logic;
    signal zxn_ram_a_di           : std_logic_vector(7 downto 0);
    signal zxn_ram_a_do           : std_logic_vector(7 downto 0);
    
@@ -518,41 +537,83 @@ begin
    -- SYNCHRONIZE ASYNCHRONOUS INPUTS
    ------------------------------------------------------------
 
-   ear_sync : entity work.synchronize
+	-- K7
+
+   process (CLK_28)
+   begin
+      if rising_edge(CLK_28) then
+         ear_port_i_q <= TAPE_IN;
+      end if;
+   end process;
+	
+   -- ear bit is inverted here; this is important!
+   
+   -- 1. NOISE REJECTION
+   --
+   --    Ignore pulses quicker than can be read by the computer.
+   --    Ten cycles @ 3.5 MHz = 2.89 us
+
+   ear_noise : entity work.debounce
+   generic map
+   (
+      INITIAL_STATE  => '1',            -- rest state is 1 because input is inverted
+      COUNTER_SIZE   => 1               -- reject pulses < 1.14 us
+   )
    port map
    (
-      i_CLK    => CLK_28,
-      i_signal => TAPE_IN,
-      o_signal => ear_port_i_q
+      clk_i          => CLK_28,
+      clk_en_i       => CLK_28_PSG_EN,  -- 1.75 MHz
+      button_i       => ear_port_i_q,
+      button_o       => ear_port_i_qq
    );
+   
+   -- 2. RELAX STUCK AT ONE TO ZERO AFTER SOME TIME
+   --
+   --    Depending on the tape circuit used, the ear bit can become stuck at 1
+   --    if the recorded tape signal just relaxes after outputting a 1 rather than
+   --    recording an active transition to 0.  On the original Spectrums, the ear
+   --    bit will relax to 0 after around 800 us max.  The ZX81 expects the output
+   --    to return to 0 in less than 1300 us.
+   --
+   --    We will try relaxing a 1 to 0 after 1000 us which corresponds to a minimum
+   --    unaffected frequency of 500 Hz at 50% duty.  Affected frequencies will see
+   --    the duration of a high pulse reduced.
+
+   -- Since the input is inverted, the goal is to change a 0 to 1 after 1000 us.
+   -- Invert the result here so that proper polarity is delivered to zx next module.
+   
+   ear_relax : entity work.relaxation
+   generic map
+   (
+      INVERT         => '1',
+      INITIAL_STATE  => '0',
+      COUNTER_SIZE   => 6                     -- 1152 us
+   )
+   port map
+   (
+      i_CLK          => CLK_28,
+      i_CLK_EN       => CLK_28_MEMBRANE_EN,   -- 0.018 ms
+      i_sig          => ear_port_i_qq,
+      o_sig          => ear_port_i_qqq
+   );	
 
    -- Bus
 
    process (CLK_28)
    begin
-      if falling_edge(CLK_28) then
-         bus_data_i_0      <= bus_data_io;
-         bus_int_n_i_0     <= bus_int_n_io;
-         bus_nmi_n_i_0     <= bus_nmi_n_i or reset;
---       bus_ramcs_i_0     <= bus_ramcs_i;
-         bus_romcs_i_0     <= bus_romcs_i;
-         bus_wait_n_i_0    <= bus_wait_n_i;
-         bus_busreq_n_i_0  <= bus_busreq_n_i;
-         bus_iorqula_n_i_0 <= bus_iorqula_n_i;
-      end if;
-   end process;
-   
-   process (CLK_28)
-   begin
       if rising_edge(CLK_28) then
-         bus_data_i_q      <= bus_data_i_0;
-         bus_int_n_i_q     <= bus_int_n_i_0;
-         bus_nmi_n_i_q     <= bus_nmi_n_i_0 or reset;
---       bus_ramcs_i_q     <= bus_ramcs_i_0;
-         bus_romcs_i_q     <= bus_romcs_i_0;
-         bus_wait_n_i_q    <= bus_wait_n_i_0;
-         bus_busreq_n_i_q  <= bus_busreq_n_i_0;
-         bus_iorqula_n_i_q <= bus_iorqula_n_i_0;
+         bus_data_i_q <= bus_data_io;
+         if expbus_type = '0' then 
+            bus_int_n_i_q <= not bus_int_in_i;   -- fixed
+         else
+            bus_int_n_i_q <= bus_int_n_io;       -- unmodified
+         end if;
+         bus_nmi_n_i_q <= bus_nmi_n_i; -- or reset
+         bus_romcs_i_q <= bus_romcs_i;
+         bus_wait_n_i_q <= bus_wait_n_i;
+         bus_busreq_n_i_q <= bus_busreq_n_i;
+         bus_iorqula_n_i_q <= bus_iorqula_n_i;
+         bus_rd_n_i_q <= bus_rd_n_io;
       end if;
    end process;
    
@@ -560,19 +621,10 @@ begin
 
    process (CLK_28)
    begin
-      if falling_edge(CLK_28) then
-         esp_gpio0_i_0 <= ESP_BOOT_N;
-         esp_gpio2_i_0 <= '1';
-         esp_rx_i_0 <= UART_RX;
-      end if;
-   end process;
-   
-   process (CLK_28)
-   begin
       if rising_edge(CLK_28) then
-         esp_gpio0_i_q <= esp_gpio0_i_0;
-         esp_gpio2_i_q <= esp_gpio2_i_0;
-         esp_rx_i_q <= esp_rx_i_0;
+         esp_gpio0_i_q <= ESP_BOOT_N; -- esp_gpio0_io
+         esp_gpio2_i_q <= '1'; -- esp_gpio2_io;
+         esp_rx_i_q <= UART_RX;
       end if;
    end process;
 
@@ -580,15 +632,8 @@ begin
 
    process (CLK_28)
    begin
-      if falling_edge(CLK_28) then
-         accel_i_0 <= accel_io;
-      end if;
-   end process;
-   
-   process (CLK_28)
-   begin
       if rising_edge(CLK_28) then
-         accel_i_q <= accel_i_0;
+         accel_i_q <= accel_io;
       end if;
    end process;
    
@@ -596,7 +641,7 @@ begin
    -- RESETS --------------------------------------------------
    ------------------------------------------------------------
 
-   -- power on or video timing change
+      -- power on or video timing change
    
    video_timing_change <= '1' when zxn_video_mode /= actual_video_mode else '0';
 
@@ -623,9 +668,9 @@ begin
       end if;
    end process;
    
-   process (reset_poweron, zxn_reset_hard, reset_state, zxn_reset_soft, expbus_reset, reset_counter_done)
+   process (reset_poweron, reset_state, zxn_reset_soft, expbus_reset, reset_counter_done)
    begin
-      if reset_poweron = '1' or zxn_reset_hard = '1' then
+      if reset_poweron = '1' then
          reset_state_next <= S_RESET_HARD_0;
       else
          case reset_state is
@@ -636,7 +681,7 @@ begin
                   reset_state_next <= S_RESET_IDLE;
                end if;
             when S_RESET_HARD_0 =>
-               if reset_poweron = '1' then
+               if zxn_reset_hard = '1' or reset_poweron = '1' then
                   reset_state_next <= S_RESET_HARD_0;
                else
                   reset_state_next <= S_RESET_HARD_1;
@@ -689,13 +734,12 @@ begin
    
    -- expansion bus reset
 
-   btn_expbus_rst : entity work.synchronize
-   port map
-   (
-      i_CLK    => CLK_28,
-      i_signal => bus_rst_n_io,
-      o_signal => bus_reset_n_q
-   );
+   process (CLK_28)
+   begin
+      if rising_edge(CLK_28) then
+         bus_reset_n_q <= bus_rst_n_io;
+      end if;
+   end process;
    
    db_expbus_rst_noise : entity work.debounce
       generic map
@@ -738,62 +782,251 @@ begin
    -- CLOCKS --------------------------------------------------
    ------------------------------------------------------------
    
-   pll : pll_top
+   -- system clocks
+
+   BUFG_CLK50 : BUFG
    port map
    (
-      SSTEP       => reset_poweron,      -- todo: change to single cycle assertion
-      STATE       => zxn_video_mode,     -- VGA 0-6, HDMI
-      RST         => '0',
-      CLKIN       => CLK_50MHZ,
-      SRDY        => open,
-    
-      CLK0OUT     => CLK_28,             -- 28 MHz
-      CLK1OUT     => CLK_28_n,           -- 28 Mhz inverted
-      CLK2OUT     => CLK_14,             -- 14 MHz
-      CLK3OUT     => CLK_7,              -- 7 MHz
-      CLK4OUT     => CLK_HDMI,           -- 28 * 5
-      CLK5OUT     => CLK_HDMI_n          -- 28 * 5 inverted
+      I => CLK_50MHZ,
+      O => CLK_50
    );
+
+   gen_clksys_1: if (g_video_inc(0) = '1') generate
+
+      -- system clock includes full vga-0 through vga-6 range
+
+      CLKSYS_PLL : system_pll
+      port map
+      (
+         -- drp
+
+         RST        => '0',
+         SSTEP      => reset_poweron,      -- power on or video mode change
+         STATE      => zxn_video_mode,     -- VGA 0-6
+         CLKDRP     => CLK_50,
+         SRDY_N     => clk_28_rdy_n,       -- clocks locked
+          
+         -- clk
+
+         CLKIN      => CLK_50,
+          
+         CLK0OUT    => CLK_28,             -- 28 MHz
+         CLK1OUT    => CLK_28_n,           -- 28 Mhz inverted
+         CLK2OUT    => CLK_14,             -- 14 MHz
+         CLK3OUT    => CLK_7,              --  7 MHz
+         CLK4OUT    => CLK_28x5_n          -- 28 MHz * 5 inverted
+      );
+
+   end generate;
+
+   gen_clksys_0: if (g_video_inc(0) = '0') generate
+
+      -- system clock includes vga-0 and vga-1 only
+
+      CLKSYS_PLL_REDUCED : system_pll_reduced
+      port map
+      (
+         -- drp
+
+         RST        => '0',
+         SSTEP      => reset_poweron,      -- power on or video mode change
+         STATE      => zxn_video_mode(0),  -- VGA 0-1
+         CLKDRP     => CLK_50,
+         SRDY_N     => clk_28_rdy_n,       -- clocks locked
+          
+         -- clk
+
+         CLKIN      => CLK_50,
+          
+         CLK0OUT    => CLK_28,             -- 28 MHz
+         CLK1OUT    => CLK_28_n,           -- 28 Mhz inverted
+         CLK2OUT    => CLK_14,             -- 14 MHz
+         CLK3OUT    => CLK_7,              --  7 MHz
+         CLK4OUT    => CLK_28x5_n          -- 28 MHz * 5 inverted
+      );
+
+   end generate;
+
+   gen_hdmi_pll_1: if (g_video_inc(1) = '1') generate
+
+      -- only for hdmi
+      
+      reset_hdmi <= zxn_video_mode(2) or zxn_video_mode(1);   -- disable for VGA-2 and above
    
+      CLKHDMI_PLL : entity work.hdmi_pll
+      port map
+      (
+         RST          => reset_hdmi,          -- disable hdmi clocks
+      
+         -- drp
+
+         SSTEP        => zxn_hdmi_reset,      -- restart hdmi clocks (rising edge)
+         CLKDRP       => CLK_50,              -- control logic clock
+      
+         -- video frame
+      
+         V5060        => zxn_video_50_60,     -- 0 = 50Hz, 1 = 60Hz
+         VMODEL       => zxn_machine_timing,  -- 1XX = Pentagon, 01X = 128K, else 48K
+
+         -- clk
+
+         CLKIN        => CLK_28,              --  28 MHz
+         CLKIN_RDY_N  => clk_28_rdy_n,        -- input clock locked
+      
+         CLK0OUT      => CLK_HDMIx5,          -- 135 MHz
+         CLK1OUT      => CLK_HDMIx5_n,        -- 135 MHz inv
+         CLK2OUT      => CLK_HDMI,            --  27 MHz
+      
+         VALID        => clk_hdmi_valid       -- indicates hdmi clocks functioning
+      );
+   
+   end generate;
+   
+   gen_hdmi_pll_0: if (g_video_inc(1) = '0') generate
+   
+      reset_hdmi <= '1';
+      
+      CLK_HDMIx5 <= '0';
+      CLK_HDMIx5_n <= '1';
+      CLK_HDMI <= '0';
+      
+      clk_hdmi_valid <= '0';
+   
+   end generate;
+
    -- cpu clock selection
 
-   process (CLK_7)
-   begin
-      if rising_edge(CLK_7) then
-         if zxn_clock_lsb = '1' and zxn_clock_contend = '0' then
-            CLK_3M5_CONT <= '0';
-         elsif zxn_clock_lsb = '0' then
-            CLK_3M5_CONT <= '1';
+   gen_clkbuf_1: if (g_video_inc(0) = '1') generate
+
+      -- sufficient clock buffers in LX16 without HDMI
+
+      process (CLK_7)
+      begin
+         if rising_edge(CLK_7) then
+            if zxn_clock_lsb = '1' and zxn_clock_contend = '0' then
+               clk_3m5_cont <= '0';
+            elsif zxn_clock_lsb = '0' then
+               clk_3m5_cont <= '1';
+            end if;
          end if;
-      end if;
-   end process;
+      end process;
 
-   BUFGMUX1_i0 : BUFGMUX_1
-   port map
-   (
-      I0 => CLK_3M5_CONT,
-      I1 => CLK_7,
-      S => zxn_cpu_speed(0),
-      O => CLK_i0
-   );
+      BUFGMUX1_i0 : BUFGMUX_1
+      port map
+      (
+         I0 => clk_3m5_cont,
+         I1 => CLK_7,
+         S => zxn_cpu_speed(0),
+         O => CLK_i0
+      );
 
-   BUFGMUX1_i1 : BUFGMUX_1
-   port map
-   (
-      I0 => CLK_14,
-      I1 => CLK_28,
-      S => zxn_cpu_speed(0),
-      O => CLK_i1
-   );
+      BUFGMUX1_i1 : BUFGMUX_1
+      port map
+      (
+         I0 => CLK_14,
+         I1 => CLK_28,
+         S => zxn_cpu_speed(0),
+         O => CLK_i1
+      );
    
-   BUFGMUX1_i2 : BUFGMUX_1
-   port map
-   (
-      I0 => CLK_i0,
-      I1 => CLK_i1,
-      S => zxn_cpu_speed(1),
-      O => CLK_CPU
-   );
+      BUFGMUX1_i2 : BUFGMUX_1
+      port map
+      (
+         I0 => CLK_i0,
+         I1 => CLK_i1,
+         S => zxn_cpu_speed(1),
+         O => CLK_CPU
+      );
+
+   end generate;
+
+   gen_clkbuf_0: if (g_video_inc(0) = '0') generate
+
+      -- insufficient clock buffers in LX16 with HDMI
+
+      -- cpu clock phase relationships
+
+      process (CLK_7)
+      begin
+         if rising_edge(CLK_7) then
+            clk7_re_7 <= not clk7_re_7;
+         end if;
+      end process;
+
+      process (CLK_28)
+      begin
+         if rising_edge(CLK_28) then
+            clk7_re_28 <= clk7_re_7;
+         end if;
+      end process;
+
+      process (CLK_28)
+      begin
+         if rising_edge(CLK_28) then
+            if clk7_re_28 /= clk7_re_7 then
+               clk_28_sc <= "01";
+            else
+               clk_28_sc <= clk_28_sc + 1;
+            end if;
+         end if;
+      end process;
+
+      -- cpu clock selection
+
+      zxn_cpu_speed_eff <= zxn_cpu_speed;
+      zxn_cpu_speed_eff_28 <= zxn_cpu_speed(1) and zxn_cpu_speed(0);
+
+      process (CLK_28)
+      begin
+         if rising_edge(CLK_28) then
+            -- 3.5 MHz (decisions on rising edge of CLK_7)
+            if clk_28_sc = "11" then
+               if zxn_clock_lsb = '1' and zxn_clock_contend = '0' then
+                  clk_3m5_cont <= '0';
+               elsif zxn_clock_lsb = '0' then
+                  clk_3m5_cont <= '1';
+               end if;
+            end if;
+         end if;
+      end process;
+
+      process (CLK_28)
+      begin
+         if rising_edge(CLK_28) then
+            case zxn_cpu_speed_eff is
+               when "00" =>
+                  -- 3.5 MHz (decisions on rising edge of CLK_7)
+                  if clk_28_sc = "11" then
+                     if zxn_clock_lsb = '1' and zxn_clock_contend = '0' then
+                        cpu_clk_s <= '0';
+                     elsif zxn_clock_lsb = '0' then
+                        cpu_clk_s <= '1';
+                     end if;
+                  end if;
+               when "01" =>
+                  -- 7 MHz
+                  cpu_clk_s <= not (clk_28_sc(1) xor clk_28_sc(0));
+               when others =>
+                  -- 14 MHz
+                  cpu_clk_s <= clk_28_sc(0);
+            end case;
+         end if;
+      end process;
+
+      BUFGMUX1_CPU : BUFGMUX_1
+      generic map
+      (
+         CLK_SEL_TYPE => "SYNC"   -- Glitchless ("SYNC") or fast ("ASYNC") clock switch-over
+      )
+      port map
+      (
+         I0 => cpu_clk_s,
+         I1 => CLK_28,
+         S => zxn_cpu_speed_eff_28,
+         O => CLK_CPU
+      );
+
+   end generate;
 
    -- Clock Enables
    
@@ -804,14 +1037,24 @@ begin
       end if;
    end process;
    
-   CLK_28_PSG_EN <= '1' when clk_28_div(3 downto 0) = "1110" else '0';                   -- AY clock enable @ 1.75MHz
-   CLK_28_DEBOUNCE_EN <= '1' when clk_28_div(17 downto 0) = ("11" & X"FFFF") else '0';   -- 9.36ms period for debounce
-   --CLK_28_MOUSE_109KHZ <= clk_28_div(7);                                                 -- 109 kHz clock 50% duty for ps2 mouse
-   --CLK_28_PS2_218KHZ <= clk_28_div(6);                                                   -- 218 kHz clock 50% duty cycle for ps2 keyboard
-   --CLK_28_MEMBRANE_EN <= '1' when clk_28_div(8 downto 0) = ('1' & X"FF") else '0';       -- complete scan every 2.5 scanlines (0.018ms per row)	
-
-
+   CLK_28_MOUSE_109KHZ <= clk_28_div(7);   -- 109 kHz clock 50% duty for ps2 mouse
+   CLK_28_PS2_218KHZ <= clk_28_div(6);     -- 218 kHz clock 50% duty cycle for ps2 keyboard
    
+   clkdiv_3_0 <= '1' when clk_28_div(3 downto 0) = "1111" else '0';
+   clkdiv_6_4 <= '1' when clk_28_div(6 downto 4) = "111" else '0';
+   clkdiv_8_7 <= '1' when clk_28_div(8 downto 7) = "11" else '0';
+   clkdiv_17_9 <= '1' when clk_28_div(17 downto 9) = "111111111" else '0';
+   
+   process (CLK_28)
+   begin
+      if rising_edge(CLK_28) then
+         CLK_28_PSG_EN <= clkdiv_3_0;                                                      -- AY clock enable @ 1.75MHz
+         CLK_28_DEBOUNCE_EN <= clkdiv_17_9 and clkdiv_8_7 and clkdiv_6_4 and clkdiv_3_0;   -- 9.36ms period for debounce
+         CLK_28_JOY_EN <= clkdiv_6_4 and clkdiv_3_0;                                       -- stick step every 4.57us (pulse width = 9.14us for each side)
+         CLK_28_MEMBRANE_EN <= clkdiv_8_7 and clkdiv_6_4 and clkdiv_3_0;                   -- complete scan every 2.5 scanlines (0.018ms per row)
+      end if;
+  end process;
+  
    ------------------------------------------------------------
    -- SRAM INTERFACE ------------------------------------------
    ------------------------------------------------------------
@@ -852,7 +1095,7 @@ begin
    --
    -- zxn_ram_a_addr   : std_logic_vector(20 downto 0)
    -- zxn_ram_a_req    : '1' on rising edge indicates memory request
-   -- zxn_ram_a_rd     : '1' for read, '0' for write
+   -- zxn_ram_a_rd_n   : '0' for read, '1' for write
    -- zxn_ram_a_do     : std_logic_vector(7 downto 0) data to write to memory
    -- zxn_ram_a_di     : std_logic_vector(7 downto 0) data read from memory
    
@@ -875,7 +1118,7 @@ begin
    -- Determine active port and sram signals for next memory cycle
    
    zxn_ram_b_req <= (zxn_ram_b_req_t xor sram_port_b_req) and not zxn_ram_a_req;   -- 0 = Port A (or nothing), 1 = Port B
-   sram_addr <= (zxn_ram_a_addr(20) & zxn_ram_a_addr(0) & zxn_ram_a_addr(19 downto 1)) when zxn_ram_b_req = '0' else (zxn_ram_b_addr(20) & zxn_ram_b_addr(0) & zxn_ram_b_addr(19 downto 1));
+   sram_addr <= (zxn_ram_a_addr(20) & zxn_ram_a_addr(0) & zxn_ram_a_addr(19 downto 1)) when zxn_ram_a_req = '1' else (zxn_ram_b_addr(20) & zxn_ram_b_addr(0) & zxn_ram_b_addr(19 downto 1));
    
    -- Track port B request which operates on a toggled signal
    
@@ -905,7 +1148,7 @@ begin
    end process;
    
    sram_data_H <= sram_addr(19);
-   sram_rd <= (zxn_ram_a_rd or not zxn_ram_a_req) when zxn_ram_b_req = '0' else '1';
+   sram_rd_n <= zxn_ram_a_rd_n and zxn_ram_a_req;  -- only port A can generate a write cycle
    
    -- Memory cycle
    
@@ -914,9 +1157,11 @@ begin
       if rising_edge(CLK_28) then
          if reset = '1' then
          
-            sram_cs_n_active <= (others => '1');
+            ram_ce_n_o <= (others => '1');
+            ram_oe_n_o <= '1';
+            ram_addr_o <= (others => '0');
+            
             sram_oe_n_active <= '0';
-            sram_addr_active <= (others => '0');
             sram_data_active <= (others => '0');
             
             sram_port_a_active <= '0';
@@ -926,9 +1171,11 @@ begin
 
          else
 
-            sram_cs_n_active <= sram_cs_n;
-            sram_oe_n_active <= not sram_rd;
-            sram_addr_active <= sram_addr(18 downto 0);
+            ram_ce_n_o <= sram_cs_n;
+            ram_oe_n_o <= sram_rd_n or not (zxn_ram_a_req or zxn_ram_b_req);
+            ram_addr_o <= sram_addr(18 downto 0);
+            
+            sram_oe_n_active <= sram_rd_n;
             sram_data_active <= zxn_ram_a_do & zxn_ram_a_do;
             
             sram_port_a_active <= zxn_ram_a_req;
@@ -940,87 +1187,58 @@ begin
       end if;
    end process;
    
-   -- Data in (R)
-   
+   -- SRAM read
+
+   sram_data_in_byte <= ram_data_i(7 downto 0) when sram_data_H_active = '0' else ram_data_i(15 downto 8);
+
    process (CLK_28)
    begin
       if rising_edge(CLK_28) then
-         sram_data_in <= ram_data_i;
-      end if;
-   end process;
-   
-   process (CLK_28)
-   begin
-      if rising_edge(CLK_28) then
-         sram_port_a_read <= sram_port_a_active and not sram_oe_n_active;
-         sram_port_b_read <= sram_port_b_active and not sram_oe_n_active;
-         sram_data_H_read <= sram_data_H_active;
-      end if;
-   end process;
-   
-   sram_data_in_byte <= sram_data_in(7 downto 0) when sram_data_H_read = '0' else sram_data_in(15 downto 8);
-   
-   --
-   
-   process (CLK_28)
-   begin
-      if rising_edge(CLK_28) then
-         if sram_port_a_read = '1' then
-            sram_port_a_dat <= sram_data_in_byte;
-         end if;
-      end if;
-   end process;
-   
-   process (CLK_28)
-   begin
-      if rising_edge(CLK_28) then
-         if sram_port_b_read = '1' then
-            sram_port_b_dat <= sram_data_in_byte;
-         end if;
-      end if;
-   end process;
-   
-   sram_port_a_do <= sram_data_in_byte when sram_port_a_read = '1' else sram_port_a_dat;
-   sram_port_b_do <= sram_data_in_byte when sram_port_b_read = '1' else sram_port_b_dat;
-   
-   -- Data out (W)
-   -- 28MHz cycle is partitioned into five periods some of which will carry we signal
-   
-   process (CLK_HDMI)
-   begin
-      if rising_edge(CLK_HDMI) then
-         if sram_oe_n_active = '1' and sram_we_line = "0000" then
-            sram_we_line <= "1111";
-            ram_we_n_o <= '0';
-         else
-            sram_we_line <= sram_we_line(2 downto 0) & '0';
-            if sram_we_line(3 downto 1) = "111" then
-               ram_we_n_o <= '0';
-            else
-               ram_we_n_o <= '1';
+         if sram_oe_n_active = '0' then
+            if sram_port_a_active = '1' then
+               sram_port_a_dat <= sram_data_in_byte;
+            end if;
+            if sram_port_b_active = '1' then
+               sram_port_b_dat <= sram_data_in_byte;
             end if;
          end if;
       end if;
    end process;
    
-   -- Connect I/O signals
+   zxn_ram_a_di <= sram_port_a_dat;
+   zxn_ram_b_di <= sram_port_b_dat;
    
-   -- make sure xst is pushing registers into io blocks
-   
-   ram_addr_o <= sram_addr_active;
+   -- SRAM write
+
+   -- CLK_28        +++++++++++++++---------------  period = 30.3 ns - 37.0 ns
+   -- CLK_28x5_n    ---+++---+++---+++---+++---+++  period = 6.06 ns - 7.40 ns
+   -- sram_we_line  444000000111111222222333333444
+   -- ram_data_io   DDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
+   -- ram_we_n_o    +++++++++------------+++++++++  duration = 12.1 ns - 14.8 ns
+
+   process (CLK_28x5_n)
+   begin
+      if rising_edge(CLK_28x5_n) then
+         if sram_we_line(2) = '1' then
+            ram_we_n_o <= '1';
+            if sram_oe_n_active = '1' then
+               sram_we_line <= "000";
+            end if;
+         else
+            ram_we_n_o <= sram_we_line(1);
+            sram_we_line <= sram_we_line + 1;
+         end if;
+      end if;
+   end process;
+
    ram_data_o <= sram_data_active when sram_oe_n_active = '1' else (others => 'Z');
-	ram_data_dir <= sram_oe_n_active;
-   ram_oe_n_o <= sram_oe_n_active;
-   ram_ce_n_o <= sram_cs_n_active;
-   
-   zxn_ram_a_di <= sram_port_a_do;
-   zxn_ram_b_di <= sram_port_b_do;	
 	
-	----- karabas memory mapping from 4 to 2 chips
+	-- karabas memory mapping from 4 to 2 chips
+	
 	MA(20) <= '0'; -- disable 4mb
 	MA(19) <= '1' when ram_ce_n_o(3) = '0' or ram_ce_n_o(2) = '0' else '0';	-- 2nd megabyte access
 	MA(18 downto 0) <= ram_addr_o(18 downto 0);
-	MD <= ram_data_o when ram_data_dir = '1' else (others => 'Z');
+	MD <= ram_data_o when sram_oe_n_active = '1' else (others => 'Z');
 	ram_data_i <= MD;
 	MRD_N <= "00" when ram_ce_n_o /= "1111" and ram_oe_n_o = '0' else "11"; -- read both bytes
 	MWR_N <= "10" when (ram_ce_n_o = "1110" or ram_ce_n_o = "1011") and ram_we_n_o = '0' else -- write lower byte
@@ -1036,90 +1254,123 @@ begin
    process (CLK_28)
    begin
       if rising_edge(CLK_28) then
-         mic_port <= zxn_audio_mic;
+         TAPE_OUT <= zxn_audio_mic;
       end if;
    end process;
-
-   TAPE_OUT <= mic_port;
    
-  ------------------------------------------------------------
-   -- VIDEO : VGA ---------------------------------------------
-   ------------------------------------------------------------
-
-   -- note: the values below are relative to the CLK period not standard VGA clock period
+gen_vga_1: if (g_video_inc(0) = '1') generate
    
-   sc_mod : entity work.scan_convert
-   generic map
-   (
-      -- mark active area of input video
-      
-      cstart      =>  38*2,  -- composite sync start
-      clength     => 352*2,  -- composite sync length
-      
-      -- output video timing
-      
-      hB          =>  32*2,   -- h sync
-      hC          =>  40*2,   -- h back porch
-      hD          => 352*2,   -- visible video (256 + both borders)
-      hpad        =>   0*2,   -- create H black border
+      ------------------------------------------------------------
+      -- VIDEO : VGA ---------------------------------------------
+      ------------------------------------------------------------
 
-      vB          =>   2*2,   -- v sync
-      vC          =>   5*2,   -- v back porch
-      vD          => 284*2,   -- visible video
-      vpad        =>   0*2    -- create V black border
-   )
-   port map
-   (
-      CLK         => CLK_14,
-      CLK_x2      => CLK_28,
-
-      hA          => ha_value,   -- h front porch
-      I_VIDEO     => zxn_rgb,
-      I_HSYNC     => zxn_rgb_hs_n,
-      I_VSYNC     => zxn_rgb_vs_n,
-      I_SCANLIN   => zxn_video_scanlines,
-      I_BLANK_N   => zxn_rgb_cs_n,
-
-      O_VIDEO_15  => rgb_15,     -- scanlines processed
-      O_VIDEO_31  => rgb_31,     -- scanlines processed
-      O_HSYNC     => hsync_out,
-      O_VSYNC     => vsync_out,
-      O_BLANK     => blank_out      
-   );
+      -- note: the values below are relative to the CLK period not standard VGA clock period
    
-   ha_value <= 48 when zxn_machine_timing(1) = '0' else 64;   -- 48k = 000 or 001, Pentagon = 100
-   
-   process (CLK_28)
-   begin
-      if falling_edge(CLK_28) then
+      sc_mod : entity work.scan_convert
+      generic map
+      (
+         -- mark active area of input video
       
-         if zxn_video_scandouble_en = '0' then
+         cstart      =>  38*2,  -- composite sync start
+         clength     => 352*2,  -- composite sync length
+      
+         -- output video timing
+      
+         hB          =>  32*2,   -- h sync
+         hC          =>  40*2,   -- h back porch
+         hD          => 352*2,   -- visible video (256 + both borders)
+         hpad        =>   0*2,   -- create H black border
+
+         vB          =>   2*2,   -- v sync
+         vC          =>   5*2,   -- v back porch
+         vD          => 284*2,   -- visible video
+         vpad        =>   0*2    -- create V black border
+      )
+      port map
+      (
+         CLK         => CLK_14,
+         CLK_x2      => CLK_28,
+
+         hA          => ha_value,   -- h front porch
+         I_VIDEO     => zxn_rgb,
+         I_HSYNC     => zxn_rgb_hs_n,
+         I_VSYNC     => zxn_rgb_vs_n,
+         I_SCANLIN   => zxn_video_scanlines,
+         I_BLANK_N   => zxn_rgb_cs_n,
+
+         O_VIDEO_15  => rgb_15,     -- scanlines processed
+         O_VIDEO_31  => rgb_31,     -- scanlines processed
+         O_HSYNC     => hsync_out,
+         O_VSYNC     => vsync_out,
+         O_BLANK     => blank_out      
+      );
+   
+      ha_value <= 48 when zxn_machine_timing(1) = '0' else 64;   -- 48k = 000 or 001, Pentagon = 100
+   
+      process (CLK_28)
+      begin
+         if falling_edge(CLK_28) then
+      
+            if zxn_video_scandouble_en = '0' then
          
-            VGA_R <= rgb_15(8 downto 6) & rgb_15(8 downto 6) & "00";
-            VGA_G <= rgb_15(5 downto 3) & rgb_15(5 downto 3) & "00";
-            VGA_B <= rgb_15(2 downto 0) & rgb_15(2 downto 0) & "00";
+               VGA_R <= rgb_15(8 downto 6) & rgb_15(8 downto 6) & "00";
+               VGA_G <= rgb_15(5 downto 3) & rgb_15(5 downto 3) & "00";
+               VGA_B <= rgb_15(2 downto 0) & rgb_15(2 downto 0) & "00";
             
-            -- csync on hsync when the scandoubler is off
+               -- csync on hsync when the scandoubler is off
             
-            VGA_HS <= zxn_rgb_cs_n;
-            VGA_VS <= '1';
+               VGA_HS <= zxn_rgb_cs_n;
+               VGA_VS <= '1';
             
-         else
+            else
          
-            VGA_R <= rgb_31(8 downto 6) & rgb_31(8 downto 6) & "00";
-            VGA_G <= rgb_31(5 downto 3) & rgb_31(5 downto 3) & "00";
-            VGA_B <= rgb_31(2 downto 0) & rgb_31(2 downto 0) & "00";
+               VGA_R <= rgb_31(8 downto 6) & rgb_31(8 downto 6) & "00";
+               VGA_G <= rgb_31(5 downto 3) & rgb_31(5 downto 3) & "00";
+               VGA_B <= rgb_31(2 downto 0) & rgb_31(2 downto 0) & "00";
             
-            VGA_HS <= hsync_out;
-            VGA_VS <= vsync_out;
+               VGA_HS <= hsync_out;
+               VGA_VS <= vsync_out;
          
+            end if;
          end if;
-      end if;
-   end process;
+      end process;
+
+   end generate;
+
+   gen_vga_0: if (g_video_inc(0) = '0') generate
+   
+      VGA_R <= (others => '0');
+      VGA_G <= (others => '0');
+      VGA_B <= (others => '0');
+      
+      VGA_HS <= '1';
+      VGA_VS <= '1';
+
+   end generate;
+
+   hdmio: entity work.hdmi_out_xilinx_s6
+   port map (
+      clock_pixel_i     => CLK_HDMI,
+      clock_tdms_i      => CLK_HDMIx5,
+      clock_tdms_n_i    => CLK_HDMIx5_n,
+      red_i             => (others => '0'),
+      green_i           => (others => '0'),
+      blue_i            => (others => '0'),
+      tmds_out_p        => open,
+      tmds_out_n        => open
+   );
    
    ------------------------------------------------------------
    -- SERIAL COMMUNICATION ------------------------------------
    ------------------------------------------------------------
+
+   -- i2c
+   
+   i2c_scl_io <= '0' when zxn_i2c_scl_n_o = '0' else 'Z';
+   i2c_sda_io <= '0' when zxn_i2c_sda_n_o = '0' else 'Z';
+
+   zxn_i2c_scl_n_i <= i2c_scl_io;
+   zxn_i2c_sda_n_i <= i2c_sda_io;
 
    -- spi sd card
    
@@ -1132,6 +1383,8 @@ begin
          SD_DI  <= zxn_spi_mosi;
       end if;
    end process;
+	
+	sd_miso_q  <= SD_DO; -- no synchronization gives extra 30 ns for sd card to respond at 33 MHz (zx next is spi master)
    
    -- uart (esp)
 
@@ -1142,9 +1395,19 @@ begin
    -- EXPANSION BUS -------------------------------------------
    ------------------------------------------------------------
    
-   -- zxn_bus_en changes on rising edge of cpu clock
+   process (CLK_28)
+   begin 
+      if rising_edge(CLK_28) then
+         if reset = '1' then
+            expbus_type <= bus_int_in_i;   -- 0 = fixed, 1 = unmodified
+         end if;
+      end if;
+   end process;
+   
+   -- zxn_bus_en, zxn_bus_clken change on rising edge of cpu clock
    -- bus cpu clock is held/floated high while the bus is disabled
    -- assumes cpu clock freq << CLK_28
+   -- not quite complete for external bus masters (busak = 0) on input side
    
    -- input
 
@@ -1177,6 +1440,7 @@ begin
    process (CLK_28)
    begin
       if rising_edge(CLK_28) then
+      
          o_zxn_cpu_a <= zxn_cpu_a;
          o_zxn_cpu_do <= zxn_cpu_do;
          o_zxn_cpu_mreq_n <= zxn_cpu_mreq_n;
@@ -1184,102 +1448,55 @@ begin
          o_zxn_cpu_rd_n <= zxn_cpu_rd_n;
          o_zxn_cpu_wr_n <= zxn_cpu_wr_n;
          o_zxn_cpu_m1_n <= zxn_cpu_m1_n;
-         o_zxn_cpu_int_n <= zxn_cpu_int_n;
-         o_zxn_cpu_busak_n <= zxn_cpu_busak_n;
-         o_zxn_cpu_halt_n <= zxn_cpu_halt_n;
-         o_zxn_cpu_rfsh_n <= zxn_cpu_rfsh_n;
+         o_zxn_cpu_busak_n <= zxn_cpu_busak_n and zxn_bus_en;
+         o_zxn_cpu_halt_n <= zxn_cpu_halt_n or not zxn_bus_en;
+         o_zxn_cpu_rfsh_n <= zxn_cpu_rfsh_n or not zxn_bus_en;
+         o_zxn_cpu_ieo <= zxn_cpu_ieo and zxn_bus_en;
+
+         o_zxn_bus_clken <= zxn_bus_en or zxn_bus_clken;
+         o_zxn_bus_inten <= zxn_bus_en and not zxn_cpu_int_n;
+         
+         -- 0 = data bus in from expansion bus
+         -- THIS IS INCORRECT FOR BUSAK=0 AS WE MUST ONLY DRIVE THE BUS IF THE NEXT IS RESPONDING WHEN RD=0
+--       if (zxn_bus_en = '0') or (zxn_cpu_busak_n = '1' and (zxn_cpu_rd_n = '0' or zxn_cpu_m1_n = '0' or zxn_cpu_rfsh_n = '0')) or (zxn_cpu_busak_n = '0' and bus_rd_n_i_q = '1') then
+         if (zxn_bus_en = '0') or (zxn_cpu_busak_n = '1' and (zxn_cpu_rd_n = '0' or zxn_cpu_m1_n = '0' or zxn_cpu_rfsh_n = '0')) or (zxn_cpu_busak_n = '0' and bus_rd_n_io = '1') then
+            o_zxn_bus_y <= '0';
+         else
+            o_zxn_bus_y <= '1';
+         end if;
+         
       end if;
    end process;
    
-   bus_addr_o <= (others => 'Z') when zxn_bus_en = '0' else o_zxn_cpu_a;
-   bus_data_io <= (others => 'Z') when zxn_bus_en = '0' or o_zxn_cpu_rd_n = '0' or o_zxn_cpu_m1_n = '0' or o_zxn_cpu_rfsh_n = '0' else o_zxn_cpu_do;
-   bus_mreq_n_o <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_mreq_n;
-   bus_iorq_n_o <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_iorq_n;
-   bus_rd_n_o <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_rd_n;
-   bus_wr_n_o <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_wr_n;
-   bus_m1_n_o <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_m1_n;
-   bus_int_n_io <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_int_n;
-   bus_busack_n_o <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_busak_n;
-   bus_halt_n_o <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_halt_n;
-   bus_rfsh_n_o <= 'Z' when zxn_bus_en = '0' else o_zxn_cpu_rfsh_n;
+   bus_addr_o <= (others => 'Z') when o_zxn_cpu_busak_n = '0' else o_zxn_cpu_a;
+   bus_data_io <= (others => 'Z') when o_zxn_bus_y = '0' else o_zxn_cpu_do;
+   bus_mreq_n_o <= 'Z' when o_zxn_cpu_busak_n = '0' else o_zxn_cpu_mreq_n;
+   bus_iorq_n_o <= 'Z' when o_zxn_cpu_busak_n = '0' else o_zxn_cpu_iorq_n;
+   bus_rd_n_io <= 'Z' when o_zxn_cpu_busak_n = '0' else o_zxn_cpu_rd_n;
+   bus_wr_n_o <= 'Z' when o_zxn_cpu_busak_n = '0' else o_zxn_cpu_wr_n;
+   bus_m1_n_o <= 'Z' when o_zxn_cpu_busak_n = '0' else o_zxn_cpu_m1_n;
+   bus_int_n_io <= '0' when o_zxn_bus_inten = '1' else 'Z';
+   bus_busack_n_o <= o_zxn_cpu_busak_n;
+   bus_halt_n_o <= o_zxn_cpu_halt_n;
+   bus_rfsh_n_o <= o_zxn_cpu_rfsh_n;
+   bus_y_o <= o_zxn_bus_y;
+   
+   -- bus identification
+   -- (while reset signal is asserted read bus type through bus_ramcs_io, not implemented)
+
+-- bus_ramcs_io <= 'Z' when bus_reset_n_q = '0' else o_zxn_cpu_ieo;
+   bus_ramcs_io <= 'Z' when bus_rst_n_io = '0' else o_zxn_cpu_ieo;
    
    -- clock to expansion bus
 
    process (CLK_28)
    begin
       if rising_edge(CLK_28) then
-         bus_clk_cpu <= CLK_3M5_CONT;
+         bus_clk_cpu <= clk_3m5_cont;
       end if;
    end process;
    
-   bus_clk35_o <= 'Z' when zxn_bus_en = '0' and zxn_bus_clken = '0' else bus_clk_cpu;
-   
--- OBUFT_i0 : OBUFT
--- port map
--- (
---    I => CLK_3M5_CONT,
---    O => bus_clk35_o,
---    T => not (zxn_bus_en or zxn_bus_clken)
--- );
-
--- BUFGMUX1_i3 : BUFGMUX_1
--- generic map
--- (
---    CLK_SEL_TYPE => "ASYNC"
--- )
--- port map
--- (
---    I0 => CLK_3M5_CONT,
---    I1 => CLK_CPU,
---    S => zxn_bus_en,
---    O => zxn_bus_clk
--- );
---
--- ODDR2_i0 : ODDR2
--- generic map
--- (
---    DDR_ALIGNMENT => "NONE",
---    INIT => '1',
---    SRTYPE => "SYNC"
--- )
--- port map
--- (
---    Q => bus_clk_cpu,
---    C0 => zxn_bus_clk,
---    C1 => not zxn_bus_clk,
---    CE => '1',
---    D0 => '1',
---    D1 => '0',
---    R => '0',
---    S => '0'
--- );
--- 
--- ODDR2_i1 : ODDR2
--- generic map
--- (
---    DDR_ALIGNMENT => "NONE",
---    INIT => '1',
---    SRTYPE => "SYNC"
--- )
--- port map
--- (
---    Q => bus_clk_cpu_en_n,
---    C0 => zxn_bus_clk,
---    C1 => not zxn_bus_clk,
---    CE => '1',
---    D0 => not (zxn_bus_en or zxn_bus_clken),
---    D1 => not (zxn_bus_en or zxn_bus_clken),
---    R => '0',
---    S => '0'
--- );
---
--- OBUFT_i0 : OBUFT
--- port map
--- (
---    I => bus_clk_cpu,
---    O => bus_clk35_o,
---    T => bus_clk_cpu_en_n
--- );
+   bus_clk35_o <= '1' when o_zxn_bus_clken = '0' else bus_clk_cpu;
 
    ------------------------------------------------------------
    -- ESP GPIO ------------------------------------------------
@@ -1300,6 +1517,7 @@ begin
    end process;
    
    --esp_gpio2_io <= 'Z';
+   --esp_gpio0_io <= 'Z' when esp_gpio0_en = '0' else esp_gpio0_o;
    ESP_BOOT_N <= 'Z' when esp_gpio0_en = '0' else esp_gpio0_o;
 
    ------------------------------------------------------------
@@ -1377,12 +1595,15 @@ begin
 
    zxn_buttons <= "00"; -- kb_divmmc & kb_multiface;
       
-      zxnext : entity work.zxnext
+   zxnext : entity work.zxnext
    generic map
    (
       g_machine_id         => g_machine_id,
+      g_video_def          => g_video_def,
       g_version            => g_version,
-      g_sub_version        => g_sub_version
+      g_sub_version        => g_sub_version,
+      g_board_issue        => g_board_issue,
+      g_video_inc          => g_video_inc
    )
    port map
    (
@@ -1401,8 +1622,7 @@ begin
       
       -- RESET
 
-      i_RESET_HARD         => reset_hard,
-      i_RESET_SOFT         => reset_soft,
+      i_RESET              => reset,
       
       o_RESET_SOFT         => zxn_reset_soft,
       o_RESET_HARD         => zxn_reset_hard,
@@ -1427,20 +1647,23 @@ begin
       
       i_KBD_EXTENDED_KEYS  => zxn_extended_keys,
       
-      -- PS/2 KEYBOARD SETUP
+      -- PS/2 KEYBOARD AND KEY JOYSTICK SETUP
       
-      o_KEYMAP_ADDR        => zxn_keymap_addr,
-      o_KEYMAP_DATA        => zxn_keymap_dat,
-      o_KEYMAP_WE          => zxn_keymap_we,
+      o_KEYMAP_ADDR        => open,
+      o_KEYMAP_DATA        => open,
+      o_KEYMAP_WE          => open,
+      o_JOYMAP_WE          => open,
       
       -- JOYSTICK
       
       i_JOY_LEFT           => zxn_joy_left,
       i_JOY_RIGHT          => zxn_joy_right,
 
-      o_JOY_IO_MODE        => zxn_joy_io_mode_en,
-      o_JOY_IO_MODE_LR     => zxn_joy_io_mode_lr,
-      o_JOY_IO_MODE_PIN_7  => zxn_joy_io_mode_pin_7,
+      o_JOY_IO_MODE_EN     => open,
+      o_JOY_IO_MODE_PIN_7  => open,
+      
+      o_JOY_LEFT_TYPE      => open,
+      o_JOY_RIGHT_TYPE     => open,
       
       -- MOUSE
       
@@ -1449,8 +1672,8 @@ begin
       i_MOUSE_BUTTON       => zxn_mouse_button,
       i_MOUSE_WHEEL        => zxn_mouse_wheel(3 downto 0),
       
-      o_PS2_MODE           => zxn_ps2_mode,
-      o_MOUSE_CONTROL      => zxn_mouse_control,
+      o_PS2_MODE           => open,
+      o_MOUSE_CONTROL      => open,
       
       -- I2C
       
@@ -1462,20 +1685,22 @@ begin
       
       -- SPI
 
-      o_SPI_SS_FLASH_n     => zxn_spi_ss_flash_n,
-      o_SPI_SS_SD1_n       => zxn_spi_ss_sd1_n,
+      o_SPI_SS_FLASH_n     => open,
+      o_SPI_SS_SD1_n       => open,
       o_SPI_SS_SD0_n       => zxn_spi_ss_sd0_n,
 
-      o_SPI_SCK            => zxn_spi_sck,
-      o_SPI_MOSI           => zxn_spi_mosi,
+      o_SPI_SCK            => zxn_spi_sck,         -- must synchronize on rising edge of i_CLK_CPU
+      o_SPI_MOSI           => zxn_spi_mosi,        -- must synchronize on rising edge of i_CLK_CPU
       
-      i_SPI_SD_MISO        => SD_DO,
-      i_SPI_FLASH_MISO     => '1',
+      i_SPI_SD_MISO        => sd_miso_q,           -- must synchronize on rising edge of i_CLK_CPU
+      i_SPI_FLASH_MISO     => '1',        -- must synchronize on rising edge of i_CLK_CPU
       
       -- UART
       
       i_UART0_RX           => zxn_uart0_rx,
       o_UART0_TX           => zxn_uart0_tx,
+      i_UART0_CTS_n        => '0',
+      o_UART0_RTR_n        => open,
       
       -- VIDEO
       -- synchronized to i_CLK_14
@@ -1484,33 +1709,32 @@ begin
       o_RGB_CS_n           => zxn_rgb_cs_n,
       o_RGB_VS_n           => zxn_rgb_vs_n,
       o_RGB_HS_n           => zxn_rgb_hs_n,
-      o_RGB_VB_n           => zxn_rgb_vb_n,
-      o_RGB_HB_n           => zxn_rgb_hb_n,
+      o_RGB_BK_n           => zxn_rgb_blank_n,
       
       o_VIDEO_50_60        => zxn_video_50_60,
       o_VIDEO_SCANLINES    => zxn_video_scanlines,
       o_VIDEO_SCANDOUBLE   => zxn_video_scandouble_en,
       
-      o_VIDEO_MODE         => zxn_video_mode,                     -- VGA 0-6, HDMI
+      o_VIDEO_MODE         => zxn_video_mode,                     -- VGA 0-6
       o_MACHINE_TIMING     => zxn_machine_timing,                 -- video timing: 00X = 48k, 010 = 128k, 011 = +3, 100 = pentagon
       
-      o_HDMI_RESET         => open,
+      o_HDMI_RESET         => zxn_hdmi_reset,
+      o_HDMI_PIXEL         => open,
+      o_HDMI_LOCK          => open,
       
       -- AUDIO
       
-      o_AUDIO_HDMI_AUDIO_EN => zxn_hdmi_audio,
+      o_AUDIO_HDMI_AUDIO_EN => open,
 
-      o_AUDIO_SPEAKER_EN   => zxn_speaker_en,
-      o_AUDIO_SPEAKER_BEEP => zxn_speaker_beep,
+      o_AUDIO_SPEAKER_EN   => open,
+      o_AUDIO_SPEAKER_EXCL => zxn_speaker_excl,
       
-      i_AUDIO_EAR          => ear_port_i_q,
-      o_AUDIO_MIC          => zxn_tape_mic,
+      i_AUDIO_EAR          => ear_port_i_qqq,
+      o_AUDIO_MIC          => zxn_audio_mic,
+      o_AUDIO_EAR          => zxn_audio_ear,
 
-      o_AUDIO_SPEAKER_EAR  => zxn_audio_ear,
-      o_AUDIO_SPEAKER_MIC  => zxn_audio_mic,
-      
-      o_AUDIO_L            => zxn_audio_L_pre,
-      o_AUDIO_R            => zxn_audio_R_pre,
+      o_AUDIO_L            => zxn_audio_L,
+      o_AUDIO_R            => zxn_audio_R,
 
       -- EXTERNAL SRAM (synchronized to i_CLK_28)
       -- memory transactions complete in one cycle, data read is registered but available asap
@@ -1519,7 +1743,7 @@ begin
       
       o_RAM_A_ADDR         => zxn_ram_a_addr,
       o_RAM_A_REQ          => zxn_ram_a_req,
-      o_RAM_A_RD           => zxn_ram_a_rd,
+      o_RAM_A_RD_n         => zxn_ram_a_rd_n,
       i_RAM_A_DI           => zxn_ram_a_di,
       o_RAM_A_DO           => zxn_ram_a_do,
       
@@ -1547,6 +1771,7 @@ begin
       o_BUS_BUSAK_n        => zxn_cpu_busak_n,
       o_BUS_HALT_n         => zxn_cpu_halt_n,
       o_BUS_RFSH_n         => zxn_cpu_rfsh_n,
+      o_BUS_IEO            => zxn_cpu_ieo,
       
       i_BUS_ROMCS_n        => zxn_bus_romcs_n,
       i_BUS_IORQULA_n      => zxn_bus_iorqula_n,
@@ -1568,9 +1793,30 @@ begin
       i_GPIO               => zxn_pi_gpio_i,
       
       o_GPIO               => zxn_gpio_o,
-      o_GPIO_EN            => zxn_gpio_en
-   );
+      o_GPIO_EN            => zxn_gpio_en,
+      
+      -- XILINX PERIPHERALS
+      
+      o_XDNA_LOAD          => open,
+      o_XDNA_SHIFT         => open,
+      i_XDNA_DO            => '0',
+      
+      o_XADC_RESET         => open,
+      
+      o_XADC_DEN           => open,
+      o_XADC_DADDR         => open,
+      o_XADC_DWE           => open,
+      i_XADC_DRDY          => '0',
+      o_XADC_DI            => open,
+      i_XADC_DO            => (others => '0'),
+      
+      i_XADC_BUSY          => '0',
+      i_XADC_EOC           => '0',
+      i_XADC_EOS           => '0',
+      o_XADC_CONVST        => open,
 
+      o_XADC_CONTROL       => open
+   );
 
 ----------- Karabas units ----------------
 
@@ -1643,8 +1889,8 @@ port map (
 	EXT_KEYS => zxn_extended_keys	
 );
 
-zxn_joy_left <= joy_l(11 downto 1);
-zxn_joy_right <= joy_r(11 downto 1);
+zxn_joy_left <= joy_l(12 downto 1);
+zxn_joy_right <= joy_r(12 downto 1);
 
 U_SW: entity work.soft_switches
 port map (
@@ -1696,8 +1942,8 @@ zxn_mouse_button <= ms_b;
 U_DAC: entity work.PCM5102
 port map (
 	clk => CLK_28,
-	left => "000" & zxn_audio_L_pre,
-	right => "000" & zxn_audio_R_pre,
+	left => "000" & zxn_audio_L,
+	right => "000" & zxn_audio_R,
 	din => DAC_DAT,
 	bck => DAC_BCK,
 	lrck => DAC_LRCK
@@ -1746,7 +1992,7 @@ port map(
 );
 
 -- beeper
-BEEPER <= zxn_speaker_beep;
+BEEPER <= zxn_speaker_excl;
 
 -- CTS is always ground
 UART_CTS <= '0';
