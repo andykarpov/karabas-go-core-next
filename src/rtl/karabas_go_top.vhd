@@ -641,7 +641,7 @@ begin
    -- RESETS --------------------------------------------------
    ------------------------------------------------------------
 
-      -- power on or video timing change
+   -- power on or video timing change
    
    video_timing_change <= '1' when zxn_video_mode /= actual_video_mode else '0';
 
@@ -668,9 +668,9 @@ begin
       end if;
    end process;
    
-   process (reset_poweron, reset_state, zxn_reset_soft, expbus_reset, reset_counter_done)
+   process (reset_poweron, zxn_reset_hard, reset_state, zxn_reset_soft, expbus_reset, reset_counter_done)
    begin
-      if reset_poweron = '1' then
+      if reset_poweron = '1' or zxn_reset_hard = '1' then
          reset_state_next <= S_RESET_HARD_0;
       else
          case reset_state is
@@ -681,7 +681,7 @@ begin
                   reset_state_next <= S_RESET_IDLE;
                end if;
             when S_RESET_HARD_0 =>
-               if zxn_reset_hard = '1' or reset_poweron = '1' then
+               if reset_poweron = '1' then
                   reset_state_next <= S_RESET_HARD_0;
                else
                   reset_state_next <= S_RESET_HARD_1;
