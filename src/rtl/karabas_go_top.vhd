@@ -26,7 +26,6 @@
 -- EU, 2024
 ------------------------------------------------------------------------------------------------------------------
 -- TODO:
--- mouse: wheel fix
 -- joysticks: test, add mappers to keyboard keys
 -- HDD: implement nemoide
 -- FDD: implement via bus ?
@@ -498,7 +497,7 @@ architecture rtl of karabas_go is
 	-- Mouse
 	signal ms_x							: std_logic_vector(7 downto 0);
 	signal ms_y							: std_logic_vector(7 downto 0);
-	signal ms_z							: std_logic_vector(3 downto 0);
+	signal ms_z							: std_logic_vector(7 downto 0);
 	signal ms_b							: std_logic_vector(2 downto 0);
 	
 	-- Joystick
@@ -1955,7 +1954,7 @@ ms_present <= '1';
 
 zxn_mouse_x <= ms_x;
 zxn_mouse_y <= ms_y;
-zxn_mouse_wheel <= "0000" & ms_z;
+zxn_mouse_wheel <= ms_z;
 zxn_mouse_button <= ms_b;
 
 -- Audio dac
