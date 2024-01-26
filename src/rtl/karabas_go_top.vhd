@@ -26,8 +26,8 @@
 -- EU, 2024
 ------------------------------------------------------------------------------------------------------------------
 -- TODO:
--- keyboard: extended keys
--- joysticks: test
+-- mouse: wheel fix
+-- joysticks: test, add mappers to keyboard keys
 -- HDD: implement nemoide
 -- FDD: implement via bus ?
 -- FT812: ?

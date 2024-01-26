@@ -34,6 +34,8 @@ entity hid_parser is
 	 KB_DO : out std_logic_vector(4 downto 0);
 
 	 -- cancel of extended keys processing
+	 -- https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/blob/master/cores/zxnext/nextreg.txt#L659
+	 -- see nextreg 0x68 bit 4 = Cancel entries in 8x5 matrix for extended keys
 	 CANCEL_EXT : in std_logic;
 
 	-- extended keys
@@ -211,18 +213,24 @@ process (RESET, CLK)
 							
 				-- L Alt -> SS+CS / EXTEND key
 				if KB_STATUS(2) = '1' then 
-					kb_data(ZX_K_CS) <= '1'; 
-					kb_data(ZX_K_SS) <= '1'; 
-					is_cs_used := '1'; 
-					ext_keys_int(EX_EXTEND) <= '1';
+					if CANCEL_EXT = '1' then
+						ext_keys_int(EX_EXTEND) <= '1';
+					else
+						kb_data(ZX_K_CS) <= '1'; 
+						kb_data(ZX_K_SS) <= '1'; 
+						is_cs_used := '1'; 					
+					end if;
 				end if;
 
 				-- R Alt -> SS+CS / EXTEND key
 				if KB_STATUS(6) = '1' then 
-					kb_data(ZX_K_CS) <= '1'; 
-					kb_data(ZX_K_SS) <= '1'; 
-					is_cs_used := '1'; 
-					ext_keys_int(EX_EXTEND) <= '1';
+					if CANCEL_EXT = '1' then
+						ext_keys_int(EX_EXTEND) <= '1';
+					else
+						kb_data(ZX_K_CS) <= '1'; 
+						kb_data(ZX_K_SS) <= '1'; 
+						is_cs_used := '1'; 					
+					end if;
 				end if;
 				
 				-- Win
@@ -247,32 +255,50 @@ process (RESET, CLK)
 					
 					-- Cursor -> CS + 5,6,7,8
 					when X"50" =>	
-						if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_5) <= '1'; is_cs_used := '1'; end if; -- left
-						ext_keys_int(EX_LEFT) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_LEFT) <= '1';
+						else
+							if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_5) <= '1'; is_cs_used := '1'; end if; -- left
+						end if;
 						
 					when X"51" =>	
-						if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_Data(ZX_K_6) <= '1'; is_cs_used := '1'; end if;  -- down
-						ext_keys_int(EX_DOWN) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_DOWN) <= '1';
+						else
+							if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_Data(ZX_K_6) <= '1'; is_cs_used := '1'; end if;  -- down
+						end if;
 						
 					when X"52" =>	
-						if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_7) <= '1'; is_cs_used := '1'; end if; -- up
-						ext_keys_int(EX_UP) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_UP) <= '1';
+						else
+							if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_7) <= '1'; is_cs_used := '1'; end if; -- up
+						end if;
 					
 					when X"4f" =>	
-						if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_8) <= '1'; is_cs_used := '1'; end if; -- right
-						ext_keys_int(EX_RIGHT) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_RIGHT) <= '1';
+						else
+							if (is_shift = '0') then kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_8) <= '1'; is_cs_used := '1'; end if; -- right
+						end if;
 
 					-- ESC -> CS + Space
 					when X"29" => 
-						kb_data(ZX_K_CS) <= '1'; 
-						kb_data(ZX_K_SP) <= '1'; 
-						is_cs_used := '1';
+						if CANCEL_EXT = '1' then
 						ext_keys_int(EX_BREAK) <= '1';
+						else
+							kb_data(ZX_K_CS) <= '1'; 
+							kb_data(ZX_K_SP) <= '1'; 
+							is_cs_used := '1';
+						end if;
 						
 					-- Backspace -> CS + 0
 					when X"2a" => 
-						kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_0) <= '1'; is_cs_used := '1'; 
-						ext_keys_int(EX_DELETE) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_DELETE) <= '1';
+						else
+							kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_0) <= '1'; is_cs_used := '1'; 
+						end if;
 
 					-- Enter
 					when X"28" =>	kb_data(ZX_K_ENT) <= '1'; -- normal
@@ -335,23 +361,35 @@ process (RESET, CLK)
 					-- Special keys 					
 					-- '/" -> SS+P / SS+7
 					when X"34" => 
-						kb_data(ZX_K_SS) <= '1'; if is_shift = '1' then kb_data(ZX_K_P) <= '1'; else kb_data(ZX_K_7) <= '1'; end if; is_ss_used := is_shift;					
-						ext_keys_int(EX_DQUOT) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_DQUOT) <= '1';
+						else
+							kb_data(ZX_K_SS) <= '1'; if is_shift = '1' then kb_data(ZX_K_P) <= '1'; else kb_data(ZX_K_7) <= '1'; end if; is_ss_used := is_shift;					
+						end if;
 						
 					-- ,/< -> SS+N / SS+R
 					when X"36" => 
-						kb_data(ZX_K_SS) <= '1'; if is_shift = '1' then kb_data(ZX_K_R) <= '1'; else kb_data(ZX_K_N) <= '1'; end if; is_ss_used := is_shift;					
-						ext_keys_int(EX_COMMA) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_COMMA) <= '1';
+						else
+							kb_data(ZX_K_SS) <= '1'; if is_shift = '1' then kb_data(ZX_K_R) <= '1'; else kb_data(ZX_K_N) <= '1'; end if; is_ss_used := is_shift;					
+						end if;
 
 					-- ./> -> SS+M / SS+T
 					when X"37" => 
-						kb_data(ZX_K_SS) <= '1'; if is_shift = '1' then kb_data(ZX_K_T) <= '1'; else kb_data(ZX_K_M) <= '1'; end if; is_ss_used := is_shift;					
-						ext_keys_int(EX_DOT) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_DOT) <= '1';
+						else
+							kb_data(ZX_K_SS) <= '1'; if is_shift = '1' then kb_data(ZX_K_T) <= '1'; else kb_data(ZX_K_M) <= '1'; end if; is_ss_used := is_shift;					
+						end if;
 
 					-- ;/: -> SS+O / SS+Z
 					when X"33" => 
-						kb_data(ZX_K_SS) <= '1'; if is_shift = '1' then kb_data(ZX_K_Z) <= '1'; else kb_data(ZX_K_O) <= '1'; end if; is_ss_used := is_shift;					
-						ext_keys_int(EX_SEMICOL) <= '1';
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_SEMICOL) <= '1';
+						else
+							kb_data(ZX_K_SS) <= '1'; if is_shift = '1' then kb_data(ZX_K_Z) <= '1'; else kb_data(ZX_K_O) <= '1'; end if; is_ss_used := is_shift;					
+						end if;
 					
 					-- Macroses
 					
@@ -391,26 +429,35 @@ process (RESET, CLK)
 					when X"2B" => kb_data(ZX_K_CS) <= '1'; kb_data(ZX_K_I) <= '1'; is_cs_used := '1'; 				
 					-- CapsLock -> CS + SS
 					when X"39" => 
-						kb_data(ZX_K_SS) <= '1'; kb_data(ZX_K_CS) <= '1'; is_cs_used := '1'; 
-						ext_keys_int(EX_CAPSLOCK) <= '1';
-					
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_CAPSLOCK) <= '1';
+						else
+							kb_data(ZX_K_SS) <= '1'; kb_data(ZX_K_CS) <= '1'; is_cs_used := '1'; 
+						end if;
+						
 					-- PgUp -> CS+3 for ZX
 					when X"4B" => 
-						if is_shift = '0' then
-								kb_data(ZX_K_CS) <= '1'; 
-								kb_data(ZX_K_3) <= '1'; 
-								is_cs_used := '1'; 
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_TRU) <= '1';
+						else
+							if is_shift = '0' then
+									kb_data(ZX_K_CS) <= '1'; 
+									kb_data(ZX_K_3) <= '1'; 
+									is_cs_used := '1'; 
+							end if;
 						end if;
-						ext_keys_int(EX_TRU) <= '1';
 
 					-- PgDown -> CS+4 for ZX 
 					when X"4E" => 
-						if is_shift = '0' then
-								kb_data(ZX_K_CS) <= '1'; 
-								kb_data(ZX_K_4) <= '1'; 
-								is_cs_used := '1'; 
+						if CANCEL_EXT = '1' then
+							ext_keys_int(EX_INV) <= '1';
+						else
+							if is_shift = '0' then
+									kb_data(ZX_K_CS) <= '1'; 
+									kb_data(ZX_K_4) <= '1'; 
+									is_cs_used := '1'; 
+							end if;
 						end if;
-						ext_keys_int(EX_INV) <= '1';
 						
 					-- Home -> 
 					when X"4a" =>	ext_keys_int(EX_EDIT) <= '1';
@@ -451,13 +498,15 @@ process (RESET, CLK)
 		end if;
 	end process;
 	
-	process (RESET, CANCEL_EXT)
-	begin 
-		if RESET = '1' or CANCEL_EXT = '1' then 
-			EXT_KEYS <= (others => '0');
-		else
-			EXT_KEYS <= ext_keys_int;
-		end if;
-	end process;
+	EXT_KEYS <= ext_keys_int;
+	
+--	process (RESET, CANCEL_EXT)
+--	begin 
+--		if RESET = '1' or CANCEL_EXT = '1' then 
+--			EXT_KEYS <= (others => '0');
+--		else
+--			EXT_KEYS <= ext_keys_int;			
+--		end if;
+--	end process;
 
 end rtl;
