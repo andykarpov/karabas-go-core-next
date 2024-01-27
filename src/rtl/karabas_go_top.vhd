@@ -297,6 +297,11 @@ architecture rtl of karabas_go is
    signal zxn_cpu_speed          : std_logic_vector(1 downto 0);
    signal zxn_cpu_speed_eff      : std_logic_vector(1 downto 0) := "00";
    signal zxn_cpu_speed_eff_28   : std_logic := '0';
+	
+	-- flashboot
+	
+	signal flashboot_start        : std_logic := '0';
+   signal flashboot_coreid       : std_logic_vector(4 downto 0) := (others => '0');
    
    -- sram interface
    
@@ -674,7 +679,7 @@ begin
    
    process (reset_poweron, zxn_reset_hard, reset_state, zxn_reset_soft, expbus_reset, reset_counter_done)
    begin
-      if reset_poweron = '1' or zxn_reset_hard = '1' then
+      if reset_poweron = '1' then
          reset_state_next <= S_RESET_HARD_0;
       else
          case reset_state is
@@ -1058,6 +1063,27 @@ begin
          CLK_28_MEMBRANE_EN <= clkdiv_8_7 and clkdiv_6_4 and clkdiv_3_0;                   -- complete scan every 2.5 scanlines (0.018ms per row)
       end if;
   end process;
+  
+  ------------------------------------------------------------
+   -- FPGA MULTIBOOT CONFIGURATION ----------------------------
+   ------------------------------------------------------------
+   
+   process (CLK_28)
+   begin
+      if rising_edge(CLK_28) then
+         if reset_poweron = '1' then
+            flashboot_start <= '0';
+         elsif flashboot_start = '0' then
+            if zxn_reset_hard = '1' then
+               flashboot_start <= '1';
+               flashboot_coreid <= "00001";   -- zx next core at position 1
+            elsif zxn_flashboot = '1' then
+               flashboot_start <= '1';
+               flashboot_coreid <= zxn_coreid;
+            end if;
+         end if;
+      end if;
+   end process;
   
    ------------------------------------------------------------
    -- SRAM INTERFACE ------------------------------------------
@@ -1857,6 +1883,9 @@ port map(
 	RTC_DO => rtc_do,
 	RTC_CS => '1',
 	RTC_WR_N => not rtc_wr,
+	
+	FLASHBOOT_START => flashboot_start,
+	FLASHBOOT_COREID => flashboot_coreid,
 	
 	ROMLOADER_ACTIVE => open,
 	ROMLOAD_ADDR => open,

@@ -47,6 +47,10 @@ entity mcu is
 	 RTC_CS 		: in std_logic := '0';
 	 RTC_WR_N 	: in std_logic := '1';
 	 
+	 -- multiboot
+	 FLASHBOOT_START 	: in std_logic :='0';
+	 FLASHBOOT_COREID : in std_logic_vector(4 downto 0) := "0000";
+	 
 	 -- soft switches command
 	 SOFTSW_COMMAND : out std_logic_vector(15 downto 0);
 	 
@@ -94,6 +98,8 @@ end component;
 
 	constant CMD_OSD 			: std_logic_vector(7 downto 0) := x"20";
 	constant CMD_RTC 			: std_logic_vector(7 downto 0) := x"FA";
+
+	constant CMD_FLASHBOOT  : std_logic_vector(7 downto 0) := x"FB";
 
 	constant CMD_INIT_START	: std_logic_vector(7 downto 0) := x"FD";
 	constant CMD_INIT_DONE	: std_logic_vector(7 downto 0) := x"FE";	
@@ -385,8 +391,11 @@ begin
 	process(CLK, N_RESET, RTC_WR_N, RTC_CS, queue_wr_full, RTC_A, RTC_DI, queue_wr_req, queue_rd_empty, BUSY)
 	begin
 		if rising_edge(CLK) then		
-			queue_wr_req <= '0';			
-			if RTC_WR_N = '0' AND RTC_CS = '1' and BUSY = '0' then -- add rtc register write to queue
+			queue_wr_req <= '0';
+			if FLASHBOOT_START = '1' and BUSY = '0' then -- send flashboot coreid to mcu to reload
+				queue_wr_req <= '1';
+				queue_di <= CMD_FLASHBOOT & x"00" & "000" & FLASHBOOT_COREID;
+			elsif RTC_WR_N = '0' AND RTC_CS = '1' and BUSY = '0' then -- add rtc register write to queue
 				queue_wr_req <= '1';
 				queue_di <= CMD_RTC & RTC_A & RTC_DI;
 			elsif queue_rd_empty = '1' or queue_data_count < 5 then -- anti-empty queue
