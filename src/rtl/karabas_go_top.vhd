@@ -1955,8 +1955,8 @@ port map (
 	-- joysticks in
 	JOY_TYPE_L => zxn_joy_left_type,
 	JOY_TYPE_R => zxn_joy_right_type,
-	JOY_L => joy_l,
-	JOY_R => joy_r,
+	JOY_L => zxn_joy_left,
+	JOY_R => zxn_joy_right,
 	
 	-- joy mapper
 	JOY_EN_N => zxn_joy_io_mode_en,
@@ -1965,8 +1965,12 @@ port map (
 	KEYMAP_WE => zxn_joymap_we
 );
 
-zxn_joy_left <= joy_l(12 downto 1);
-zxn_joy_right <= joy_r(12 downto 1);
+-- remap incoming joy data to zxn bits position
+--       12    11 10 9 8 7     6 5     4 3 2 1 0 
+-- in:  MODE   Z  Y  X C B     A START R L D U ON
+-- out:  -  MODE  X  Z Y START A C     B U D L R
+zxn_joy_left <=  joy_l(12) & joy_l(9) & joy_l(11) & joy_l(10) & joy_l(5) & joy_l(6) & joy_l(8) & joy_l(7) & joy_l(1) & joy_l(2) & joy_l(3) & joy_l(4);
+zxn_joy_right <= joy_r(12) & joy_r(9) & joy_r(11) & joy_r(10) & joy_r(5) & joy_r(6) & joy_r(8) & joy_r(7) & joy_r(1) & joy_r(2) & joy_r(3) & joy_r(4);
 
 U_SW: entity work.soft_switches
 port map (

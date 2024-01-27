@@ -53,13 +53,13 @@ entity hid_parser is
 	 -- 100 = Kempston 2 (port 0x37)
 	 -- 101 = MD 1 (3 or 6 button joystick port 0x1F)
 	 -- 110 = MD 2 (3 or 6 button joystick port 0x37)
-	 -- 111 = Both joysticks in I/O Mode (unsupported on karabas go)
+	 -- 111 = User defined keys via keymap
 	 JOY_TYPE_L : in std_logic_vector(2 downto 0) := "000";
 	 JOY_TYPE_R : in std_logic_vector(2 downto 0) := "000";
 	 
-	 -- active high  MODE X Z Y START A C B U D L R ON
-	 JOY_L : in std_logic_vector(12 downto 0) := (others => '0');
-	 JOY_R : in std_logic_vector(12 downto 0) := (others => '0');
+	 -- active high  MODE X Z Y START A C B U D L R
+	 JOY_L : in std_logic_vector(11 downto 0) := (others => '0');
+	 JOY_R : in std_logic_vector(11 downto 0) := (others => '0');
 	 
 	 -- joysticks enabled (active 0)
 	 JOY_EN_N : in std_logic := '1';
@@ -74,33 +74,65 @@ end hid_parser;
 
 architecture rtl of hid_parser is
 
-	type matrix IS (ZX_K_CS, ZX_K_A, ZX_K_Q, ZX_K_1, 
-						 ZX_K_0, ZX_K_P, ZX_K_ENT, ZX_K_SP,
-						 ZX_K_Z, ZX_K_S, ZX_K_W, ZX_K_2,
-						 ZX_K_9, ZX_K_O, ZX_K_L, ZX_K_SS,
-						 ZX_K_X, ZX_K_D, ZX_K_E, ZX_K_3,
-						 ZX_K_8, ZX_K_I, ZX_K_K, ZX_K_M,
-						 ZX_K_C, ZX_K_F, ZX_K_R, ZX_K_4,
-						 ZX_K_7, ZX_K_U, ZX_K_J, ZX_K_N,
-						 ZX_K_V, ZX_K_G, ZX_K_T, ZX_K_5,
-						 ZX_K_6, ZX_K_Y, ZX_K_H, ZX_K_B);
-					
+	-- col0
+	constant ZX_K_CS : natural := 0; 
+	constant ZX_K_A : natural := 1;
+	constant ZX_K_Q : natural := 2;
+	constant ZX_K_1 : natural := 3;
+	constant ZX_K_0 : natural := 4;
+	constant ZX_K_P : natural := 5;
+	constant ZX_K_ENT : natural := 6;
+	constant ZX_K_SP : natural := 7;
 
-	type kb_matrix is array(matrix) of std_logic;
-	
-	signal kb_data : kb_matrix := (others => '0'); -- 40 keys
+	-- col1
+	constant ZX_K_Z : natural := 8;
+	constant ZX_K_S : natural := 9;
+	constant ZX_K_W : natural := 10;
+	constant ZX_K_2 : natural := 11;
+	constant ZX_K_9 : natural := 12;
+	constant ZX_K_O : natural := 13;
+	constant ZX_K_L : natural := 14;
+	constant ZX_K_SS : natural := 15;	
+
+	-- col2
+	constant ZX_K_X : natural := 16;
+	constant ZX_K_D : natural := 17;
+	constant ZX_K_E : natural := 18;
+	constant ZX_K_3 : natural := 19;
+	constant ZX_K_8 : natural := 20;
+	constant ZX_K_I : natural := 21;
+	constant ZX_K_K : natural := 22;
+	constant ZX_K_M : natural := 23;
+
+	-- col3
+	constant ZX_K_C : natural := 24;
+	constant ZX_K_F : natural := 25;
+	constant ZX_K_R : natural := 26;
+	constant ZX_K_4 : natural := 27;
+	constant ZX_K_7 : natural := 28;
+	constant ZX_K_U : natural := 29;
+	constant ZX_K_J : natural := 30;
+	constant ZX_K_N : natural := 31;
+
+	-- col4
+	constant ZX_K_V : natural := 32;
+	constant ZX_K_G : natural := 33;
+	constant ZX_K_T : natural := 34;
+	constant ZX_K_5 : natural := 35;
+	constant ZX_K_6 : natural := 36;
+	constant ZX_K_Y : natural := 37;
+	constant ZX_K_H : natural := 38;
+	constant ZX_K_B : natural := 39;
+
+	signal kb_data : std_logic_vector(39 downto 0) := (others => '0'); -- 40 keys
 	
 	signal data : std_logic_vector(47 downto 0);
 	
 	signal is_macros : std_logic := '0';
 	type macros_machine is (MACRO_START, MACRO_CS_ON, MACRO_SS_ON, MACRO_SS_OFF, MACRO_KEY, MACRO_CS_OFF, MACRO_END);
-	signal macros_key : matrix;
+	signal macros_key : natural;
 	signal macros_state : macros_machine := MACRO_START;
 	signal macro_cnt : std_logic_vector(21 downto 0) := (others => '0');
-	
---	type matrix_ex is (EX_EXTEND, EX_UP, EX_CAPSLOCK, EX_GRAPH, EX_TRU, EX_INV, EX_BREAK, EX_EDIT,
---							 EX_SEMICOL, EX_DQUOT, EX_COMMA, EX_DOT, EX_DELETE, EX_RIGHT, EX_LEFT, EX_DOWN);
---   type kb_matrix_ex is array(matrix_ex) of std_logic;	
 	
 	signal ext_keys_int : std_logic_vector(15 downto 0) := (others => '0');
 
@@ -124,21 +156,52 @@ architecture rtl of hid_parser is
 	constant JOY_TYPE_SINCLAIR1 : std_logic_vector(2 downto 0) := "011";
 	constant JOY_TYPE_SINCLAIR2 : std_logic_vector(2 downto 0) := "000";
 	constant JOY_TYPE_CURSOR : std_logic_vector(2 downto 0) := "010";
+	constant JOY_TYPE_KEMPSTON1 : std_logic_vector(2 downto 0) := "001";
+	constant JOY_TYPE_KEMPSTON2 : std_logic_vector(2 downto 0) := "100";
+	constant JOY_TYPE_MD1 : std_logic_vector(2 downto 0) := "101";
+	constant JOY_TYPE_MD2 : std_logic_vector(2 downto 0) := "110";
 	constant JOY_TYPE_USER : std_logic_vector(2 downto 0) := "111";
 	
-	constant SC_CTL_ON : natural := 0;
-	constant SC_BTN_UP : natural := 1;
+	-- ZXN joy buttons: MODE X Z Y START A C B U D L R
+   constant	SC_BTN_RIGHT: natural := 0;
+	constant SC_BTN_LEFT: natural := 1;
 	constant SC_BTN_DOWN: natural := 2;
-	constant SC_BTN_LEFT: natural := 3;
-   constant	SC_BTN_RIGHT: natural := 4;
-	constant SC_BTN_START: natural := 5;
-   constant SC_BTN_A : natural := 6;
-	constant SC_BTN_B : natural := 7;
-	constant SC_BTN_C : natural := 8;
-	constant SC_BTN_X : natural := 9;
-	constant SC_BTN_Y : natural := 10;
-	constant SC_BTN_Z : natural := 11;
-	constant SC_BTN_MODE : natural := 12;	
+	constant SC_BTN_UP : natural := 3;
+	constant SC_BTN_B : natural := 4;
+	constant SC_BTN_C : natural := 5;
+   constant SC_BTN_A : natural := 6;	
+	constant SC_BTN_START: natural := 7;
+	constant SC_BTN_Y : natural := 8;
+	constant SC_BTN_Z : natural := 9;
+	constant SC_BTN_X : natural := 10;
+	constant SC_BTN_MODE : natural := 11;	
+	
+	-- joy map
+	signal map_btn_up_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_down_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_left_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_right_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_start_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_a_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_b_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_c_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_x_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_y_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_z_l : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_mode_l : std_logic_vector(5 downto 0) := (others => '1');
+
+	signal map_btn_up_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_down_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_left_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_right_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_start_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_a_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_b_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_c_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_x_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_y_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_z_r : std_logic_vector(5 downto 0) := (others => '1');
+	signal map_btn_mode_r : std_logic_vector(5 downto 0) := (others => '1');
 	
 begin 
 
@@ -539,7 +602,6 @@ process (RESET, CLK)
 				end loop;
 				
 				-- map joysticks to keyboard
-				-- sega joy:  Mode Z Y X C B A Start R L D U On
 				
 				-- sinclair 1
 				if joy_type_l = JOY_TYPE_SINCLAIR1 then 
@@ -589,14 +651,68 @@ process (RESET, CLK)
 					if (joy_r(SC_BTN_B) = '1') then kb_data(ZX_K_0) <= '1'; end if; -- fire					
 				end if;
 				
-				-- user defined keymapped joysticks / TODO
+				-- user defined keymapped joysticks
 				if joy_type_l = JOY_TYPE_USER then
+					if (joy_l(SC_BTN_UP) = '1' 	and map_btn_up_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_up_l))) 		<= '1'; end if;
+					if (joy_l(SC_BTN_DOWN) = '1' 	and map_btn_down_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_down_l))) 	<= '1'; end if;
+					if (joy_l(SC_BTN_LEFT) = '1' 	and map_btn_left_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_left_l))) 	<= '1'; end if;
+					if (joy_l(SC_BTN_RIGHT) = '1' and map_btn_right_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_right_l))) 	<= '1'; end if;
+					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
+					if (joy_l(SC_BTN_B) = '1' 		and map_btn_b_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_b_l))) 		<= '1'; end if;
+					if (joy_l(SC_BTN_C) = '1' 		and map_btn_c_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_l))) 		<= '1'; end if;
+					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
 				end if;
 				
 				if joy_type_r = JOY_TYPE_USER then
+					if (joy_r(SC_BTN_UP) = '1' 	and map_btn_up_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_up_r))) 		<= '1'; end if;
+					if (joy_r(SC_BTN_DOWN) = '1' 	and map_btn_down_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_down_r))) 	<= '1'; end if;
+					if (joy_r(SC_BTN_LEFT) = '1' 	and map_btn_left_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_left_r))) 	<= '1'; end if;
+					if (joy_r(SC_BTN_RIGHT) = '1' and map_btn_right_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_right_r))) 	<= '1'; end if;
+					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
+					if (joy_r(SC_BTN_B) = '1' 		and map_btn_b_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_b_r))) 		<= '1'; end if;
+					if (joy_r(SC_BTN_C) = '1' 		and map_btn_c_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_r))) 		<= '1'; end if;
+					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;
 				end if;
 				
-				-- TODO: use user defined mapped joy keys for other joy types (upper unused keys)
+				-- map user defined joy keys for other joy types (upper unused keys)
+
+				if (joy_type_l = JOY_TYPE_SINCLAIR1 or 
+					 joy_type_l = JOY_TYPE_SINCLAIR2 or 
+					 joy_type_l = JOY_TYPE_CURSOR) then
+					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
+					if (joy_l(SC_BTN_C) = '1' 		and map_btn_c_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_l))) 		<= '1'; end if;
+					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
+				end if;
+				
+				if (joy_type_l = JOY_TYPE_KEMPSTON1 or 
+					 joy_type_l = JOY_TYPE_KEMPSTON2) then
+					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
+					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
+				end if;
+				
+				if (joy_type_r = JOY_TYPE_SINCLAIR1 or 
+					 joy_type_r = JOY_TYPE_SINCLAIR2 or 
+					 joy_type_r = JOY_TYPE_CURSOR) then
+					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
+					if (joy_r(SC_BTN_C) = '1' 		and map_btn_c_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_r))) 		<= '1'; end if;
+					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;					 
+				end if;
+
+				if (joy_type_r = JOY_TYPE_KEMPSTON1 or 
+					 joy_type_r = JOY_TYPE_KEMPSTON2) then
+					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
+					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;					 
+				end if;
+				
+				if (joy_l(SC_BTN_X) = '1' 		and map_btn_x_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_x_l))) 		<= '1'; end if;
+				if (joy_l(SC_BTN_Y) = '1' 		and map_btn_y_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_y_l))) 		<= '1'; end if;
+				if (joy_l(SC_BTN_Z) = '1' 		and map_btn_z_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_z_l))) 		<= '1'; end if;
+				if (joy_l(SC_BTN_MODE) = '1' 	and map_btn_mode_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_mode_l))) 	<= '1'; end if;
+
+				if (joy_r(SC_BTN_X) = '1' 		and map_btn_x_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_x_r))) 		<= '1'; end if;
+				if (joy_r(SC_BTN_Y) = '1' 		and map_btn_y_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_y_r))) 		<= '1'; end if;
+				if (joy_r(SC_BTN_Z) = '1' 		and map_btn_z_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_z_r))) 		<= '1'; end if;
+				if (joy_r(SC_BTN_MODE) = '1' 	and map_btn_mode_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_mode_r))) 	<= '1'; end if;				
 				
 				-- cleanup CS key when SS is marked
 				if (is_ss_used = '1' and is_cs_used = '0') then 
@@ -608,5 +724,69 @@ process (RESET, CLK)
 	end process;
 	
 	EXT_KEYS <= ext_keys_int;
+	
+	-- receive joy map into registers
+	process (CLK, RESET)
+	begin
+		if RESET = '1' then
+			map_btn_up_l <= (others => '1');
+			map_btn_down_l <= (others => '1');
+			map_btn_left_l <= (others => '1');
+			map_btn_right_l <= (others => '1');
+			map_btn_start_l<= (others => '1');
+			map_btn_a_l <= (others => '1');
+			map_btn_b_l <= (others => '1');
+			map_btn_c_l <= (others => '1');
+			map_btn_x_l <= (others => '1');
+			map_btn_y_l <= (others => '1');
+			map_btn_z_l <= (others => '1');
+			map_btn_mode_l <= (others => '1');
+			map_btn_up_r <= (others => '1');
+			map_btn_down_r <= (others => '1');
+			map_btn_left_r <= (others => '1');
+			map_btn_right_r <= (others => '1');
+			map_btn_start_r <= (others => '1');
+			map_btn_a_r <= (others => '1');
+			map_btn_b_r <= (others => '1');
+			map_btn_c_r <= (others => '1');
+			map_btn_x_r <= (others => '1');
+			map_btn_y_r <= (others => '1');
+			map_btn_z_r <= (others => '1');
+			map_btn_mode_r <= (others => '1');			
+		elsif rising_edge(CLK) then
+			if KEYMAP_WE = '1' then 
+				-- MODE X Z Y START A C B U D L R
+				case KEYMAP_ADDR is 
+					when "00000" => map_btn_right_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3); -- row + col => col + row
+					when "00001" => map_btn_left_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "00010" => map_btn_down_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "00011" => map_btn_up_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "00100" => map_btn_b_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "00101" => map_btn_c_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "00110" => map_btn_a_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "00111" => map_btn_start_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "01000" => map_btn_y_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "01001" => map_btn_z_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "01010" => map_btn_x_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "01011" => map_btn_mode_l <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+
+					when "10000" => map_btn_right_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "10001" => map_btn_left_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "10010" => map_btn_down_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "10011" => map_btn_up_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "10100" => map_btn_b_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "10101" => map_btn_c_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "10110" => map_btn_a_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "10111" => map_btn_start_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "11000" => map_btn_y_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "11001" => map_btn_z_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "11010" => map_btn_x_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					when "11011" => map_btn_mode_r <= KEYMAP_DATA(2 downto 0) & KEYMAP_DATA(5 downto 3);
+					
+					when others => null;
+				end case;
+			end if;
+		end if;
+	end process;
 
 end rtl;
