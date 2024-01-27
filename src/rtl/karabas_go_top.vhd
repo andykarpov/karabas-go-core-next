@@ -26,13 +26,16 @@
 -- EU, 2024
 ------------------------------------------------------------------------------------------------------------------
 -- TODO:
--- joysticks: test, add mappers to keyboard keys
+-- mouse: implement mouse swap and dpi change (use zxn signals)
+-- joysticks: test kempston and md, 
+-- joysticks: add mappers to keyboard keys for sinclair 1,2, custom keys, etc (use zxn keymap)
+-- joysticks io mode: think what to do
 -- HDD: implement nemoide
 -- FDD: implement via bus ?
 -- FT812: ?
 -- OSD: think about it
 -- GS: add to the zxbus ?
--- Bridge second UART to USB!
+-- Bridge second (pi ?) UART to USB!
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -375,6 +378,17 @@ architecture rtl of karabas_go is
    
    signal zxn_joy_left           : std_logic_vector(11 downto 0);
    signal zxn_joy_right          : std_logic_vector(11 downto 0);
+
+   signal zxn_joy_left_type      : std_logic_vector(2 downto 0);
+   signal zxn_joy_right_type     : std_logic_vector(2 downto 0);	
+
+   signal zxn_joy_io_mode_en     : std_logic;
+   signal zxn_joy_io_mode_pin_7  : std_logic;
+	
+	signal zxn_keymap_addr        : std_logic_vector(8 downto 0);
+   signal zxn_keymap_dat         : std_logic_vector(7 downto 0);
+   signal zxn_keymap_we          : std_logic;
+   signal zxn_joymap_we          : std_logic;   
 	
    signal zxn_mouse_x            : std_logic_vector(7 downto 0);
    signal zxn_mouse_y            : std_logic_vector(7 downto 0);
@@ -1679,21 +1693,21 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
       
       -- PS/2 KEYBOARD AND KEY JOYSTICK SETUP
       
-      o_KEYMAP_ADDR        => open,
-      o_KEYMAP_DATA        => open,
-      o_KEYMAP_WE          => open,
-      o_JOYMAP_WE          => open,
+      o_KEYMAP_ADDR        => zxn_keymap_addr,
+      o_KEYMAP_DATA        => zxn_keymap_dat,
+      o_KEYMAP_WE          => zxn_keymap_we,
+      o_JOYMAP_WE          => zxn_joymap_we,
       
       -- JOYSTICK
       
       i_JOY_LEFT           => zxn_joy_left,
       i_JOY_RIGHT          => zxn_joy_right,
 
-      o_JOY_IO_MODE_EN     => open,
-      o_JOY_IO_MODE_PIN_7  => open,
+      o_JOY_IO_MODE_EN     => zxn_joy_io_mode_en,
+      o_JOY_IO_MODE_PIN_7  => zxn_joy_io_mode_pin_7,
       
-      o_JOY_LEFT_TYPE      => open,
-      o_JOY_RIGHT_TYPE     => open,
+      o_JOY_LEFT_TYPE      => zxn_joy_left_type,
+      o_JOY_RIGHT_TYPE     => zxn_joy_right_type,
       
       -- MOUSE
       
@@ -1918,6 +1932,7 @@ port map (
 U_HID: entity work.hid_parser
 port map (
 	CLK => clk_28,
+	CLK_EN => CLK_28_MEMBRANE_EN,
 	RESET => areset,	
 
 	-- hid keyboard input
@@ -1935,7 +1950,19 @@ port map (
 	
 	-- extended keys
 	CANCEL_EXT => zxn_cancel_extended_entries,
-	EXT_KEYS => zxn_extended_keys	
+	EXT_KEYS => zxn_extended_keys,
+	
+	-- joysticks in
+	JOY_TYPE_L => zxn_joy_left_type,
+	JOY_TYPE_R => zxn_joy_right_type,
+	JOY_L => joy_l,
+	JOY_R => joy_r,
+	
+	-- joy mapper
+	JOY_EN_N => zxn_joy_io_mode_en,
+	KEYMAP_ADDR => zxn_keymap_addr(4 downto 0),
+	KEYMAP_DATA => zxn_keymap_dat(5 downto 0),
+	KEYMAP_WE => zxn_joymap_we
 );
 
 zxn_joy_left <= joy_l(12 downto 1);

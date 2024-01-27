@@ -16,6 +16,7 @@ entity hid_parser is
 	port
 	(
 	 CLK			 : in std_logic;
+	 CLK_EN		 : in std_logic;
 	 RESET 		 : in std_logic;
 	 
 	 -- incoming usb hid report data
@@ -38,11 +39,35 @@ entity hid_parser is
 	 -- see nextreg 0x68 bit 4 = Cancel entries in 8x5 matrix for extended keys
 	 CANCEL_EXT : in std_logic;
 
-	-- extended keys
+	-- extended keys (active 1)
 	-- EXT_KEYS(15 downto 8) = DOWN LEFT RIGHT DELETE . , " ;
 	-- EXT_KEYS( 7 downto 0) = EDIT BREAK INV TRU GRAPH CAPSLOCK UP EXTEND
 	 
-	 EXT_KEYS : out std_logic_vector(15 downto 0) := (others => '0')
+	 EXT_KEYS : out std_logic_vector(15 downto 0) := (others => '0');
+	 
+	 -- joystick types
+ 	 -- 000 = Sinclair 2 (67890)
+	 -- 001 = Kempston 1 (port 0x1F)
+	 -- 010 = Cursor (56780)
+	 -- 011 = Sinclair 1 (12345)
+	 -- 100 = Kempston 2 (port 0x37)
+	 -- 101 = MD 1 (3 or 6 button joystick port 0x1F)
+	 -- 110 = MD 2 (3 or 6 button joystick port 0x37)
+	 -- 111 = Both joysticks in I/O Mode (unsupported on karabas go)
+	 JOY_TYPE_L : in std_logic_vector(2 downto 0) := "000";
+	 JOY_TYPE_R : in std_logic_vector(2 downto 0) := "000";
+	 
+	 -- active high  MODE X Z Y START A C B U D L R ON
+	 JOY_L : in std_logic_vector(12 downto 0) := (others => '0');
+	 JOY_R : in std_logic_vector(12 downto 0) := (others => '0');
+	 
+	 -- joysticks enabled (active 0)
+	 JOY_EN_N : in std_logic := '1';
+	 
+	 -- mapper from zxnext TODO
+    KEYMAP_ADDR        : in std_logic_vector(4 downto 0);   -- left/right (4), button number (3:0)
+    KEYMAP_DATA        : in std_logic_vector(5 downto 0);   -- membrane row (5:3), membrane col (2:0)
+    KEYMAP_WE          : in std_logic
 	 
 	);
 end hid_parser;
@@ -96,6 +121,25 @@ architecture rtl of hid_parser is
 	constant EX_LEFT : natural := 14;
 	constant EX_DOWN : natural := 15;
 	
+	constant JOY_TYPE_SINCLAIR1 : std_logic_vector(2 downto 0) := "011";
+	constant JOY_TYPE_SINCLAIR2 : std_logic_vector(2 downto 0) := "000";
+	constant JOY_TYPE_CURSOR : std_logic_vector(2 downto 0) := "010";
+	constant JOY_TYPE_USER : std_logic_vector(2 downto 0) := "111";
+	
+	constant SC_CTL_ON : natural := 0;
+	constant SC_BTN_UP : natural := 1;
+	constant SC_BTN_DOWN: natural := 2;
+	constant SC_BTN_LEFT: natural := 3;
+   constant	SC_BTN_RIGHT: natural := 4;
+	constant SC_BTN_START: natural := 5;
+   constant SC_BTN_A : natural := 6;
+	constant SC_BTN_B : natural := 7;
+	constant SC_BTN_C : natural := 8;
+	constant SC_BTN_X : natural := 9;
+	constant SC_BTN_Y : natural := 10;
+	constant SC_BTN_Z : natural := 11;
+	constant SC_BTN_MODE : natural := 12;	
+	
 begin 
 
 	-- incoming data of pressed keys from usb hid report
@@ -110,7 +154,8 @@ begin
 					or    ( kb_data(ZX_K_0) and not(    A(12) ) ) 
 					or    ( kb_data(ZX_K_P) and not(    A(13) ) ) 
 					or    ( kb_data(ZX_K_ENT) and not(  A(14) ) ) 
-					or    ( kb_data(ZX_K_SP) and not(   A(15) ) )  );
+					or    ( kb_data(ZX_K_SP) and not(   A(15) ) )
+					);
 
 		KB_DO(1) <=	not( ( kb_data(ZX_K_Z)  and not(A(8) ) ) 
 					or   ( kb_data(ZX_K_S)  and not(A(9) ) ) 
@@ -119,7 +164,8 @@ begin
 					or   ( kb_data(ZX_K_9) and not(A(12)) ) 
 					or   ( kb_data(ZX_K_O) and not(A(13)) ) 
 					or   ( kb_data(ZX_K_L) and not(A(14)) ) 
-					or   ( kb_data(ZX_K_SS) and not(A(15)) ) );
+					or   ( kb_data(ZX_K_SS) and not(A(15)) ) 
+					);
 
 		KB_DO(2) <=		not( ( kb_data(ZX_K_X) and not( A(8)) ) 
 					or   ( kb_data(ZX_K_D) and not( A(9)) ) 
@@ -128,7 +174,8 @@ begin
 					or   ( kb_data(ZX_K_8) and not(A(12)) ) 
 					or   ( kb_data(ZX_K_I) and not(A(13)) ) 
 					or   ( kb_data(ZX_K_K) and not(A(14)) ) 
-					or   ( kb_data(ZX_K_M) and not(A(15)) ) );
+					or   ( kb_data(ZX_K_M) and not(A(15)) ) 
+					);
 
 		KB_DO(3) <=		not( ( kb_data(ZX_K_C) and not( A(8)) ) 
 					or   ( kb_data(ZX_K_F) and not( A(9)) ) 
@@ -137,7 +184,8 @@ begin
 					or   ( kb_data(ZX_K_7) and not(A(12)) ) 
 					or   ( kb_data(ZX_K_U) and not(A(13)) ) 
 					or   ( kb_data(ZX_K_J) and not(A(14)) ) 
-					or   ( kb_data(ZX_K_N) and not(A(15)) ) );
+					or   ( kb_data(ZX_K_N) and not(A(15)) ) 
+					);
 
 		KB_DO(4) <=		not( ( kb_data(ZX_K_V) and not( A(8)) ) 
 					or   ( kb_data(ZX_K_G) and not( A(9)) ) 
@@ -146,7 +194,8 @@ begin
 					or   ( kb_data(ZX_K_6) and not(A(12)) ) 
 					or   ( kb_data(ZX_K_Y) and not(A(13)) ) 
 					or   ( kb_data(ZX_K_H) and not(A(14)) ) 
-					or   ( kb_data(ZX_K_B) and not(A(15)) ) );					
+					or   ( kb_data(ZX_K_B) and not(A(15)) ) 
+					);					
 	end process;
 
 process (RESET, CLK)
@@ -489,6 +538,66 @@ process (RESET, CLK)
 				end case;
 				end loop;
 				
+				-- map joysticks to keyboard
+				-- sega joy:  Mode Z Y X C B A Start R L D U On
+				
+				-- sinclair 1
+				if joy_type_l = JOY_TYPE_SINCLAIR1 then 
+					if (joy_l(SC_BTN_UP) = '1') then kb_data(ZX_K_4) <= '1'; end if; -- up
+					if (joy_l(SC_BTN_DOWN) = '1') then kb_data(ZX_K_3) <= '1'; end if; -- down
+					if (joy_l(SC_BTN_LEFT) = '1') then kb_data(ZX_K_1) <= '1'; end if; -- left
+					if (joy_l(SC_BTN_RIGHT) = '1') then kb_data(ZX_K_2) <= '1'; end if; -- right
+					if (joy_l(SC_BTN_B) = '1') then kb_data(ZX_K_5) <= '1'; end if; -- fire
+				end if;
+				if joy_type_r = JOY_TYPE_SINCLAIR1 then
+					if (joy_r(SC_BTN_UP) = '1') then kb_data(ZX_K_4) <= '1'; end if; -- up
+					if (joy_r(SC_BTN_DOWN) = '1') then kb_data(ZX_K_3) <= '1'; end if; -- down
+					if (joy_r(SC_BTN_LEFT) = '1') then kb_data(ZX_K_1) <= '1'; end if; -- left
+					if (joy_r(SC_BTN_RIGHT) = '1') then kb_data(ZX_K_2) <= '1'; end if; -- right
+					if (joy_r(SC_BTN_B) = '1') then kb_data(ZX_K_5) <= '1'; end if; -- fire					
+				end if;
+				
+				-- sinclair 2
+				if joy_type_l = JOY_TYPE_SINCLAIR2 then 
+					if (joy_l(SC_BTN_UP) = '1') then kb_data(ZX_K_9) <= '1'; end if; -- up
+					if (joy_l(SC_BTN_DOWN) = '1') then kb_data(ZX_K_8) <= '1'; end if; -- down
+					if (joy_l(SC_BTN_LEFT) = '1') then kb_data(ZX_K_6) <= '1'; end if; -- left
+					if (joy_l(SC_BTN_RIGHT) = '1') then kb_data(ZX_K_7) <= '1'; end if; -- right
+					if (joy_l(SC_BTN_B) = '1') then kb_data(ZX_K_0) <= '1'; end if; -- fire	
+				end if;
+				if joy_type_r = JOY_TYPE_SINCLAIR2 then
+					if (joy_r(SC_BTN_UP) = '1') then kb_data(ZX_K_9) <= '1'; end if; -- up
+					if (joy_r(SC_BTN_DOWN) = '1') then kb_data(ZX_K_8) <= '1'; end if; -- down
+					if (joy_r(SC_BTN_LEFT) = '1') then kb_data(ZX_K_6) <= '1'; end if; -- left
+					if (joy_r(SC_BTN_RIGHT) = '1') then kb_data(ZX_K_7) <= '1'; end if; -- right
+					if (joy_r(SC_BTN_B) = '1') then kb_data(ZX_K_0) <= '1'; end if; -- fire					
+				end if;
+				
+				-- cursor
+				if joy_type_l = JOY_TYPE_CURSOR then 
+					if (joy_l(SC_BTN_UP) = '1') then kb_data(ZX_K_7) <= '1'; end if; -- up
+					if (joy_l(SC_BTN_DOWN) = '1') then kb_data(ZX_K_6) <= '1'; end if; -- down
+					if (joy_l(SC_BTN_LEFT) = '1') then kb_data(ZX_K_5) <= '1'; end if; -- left
+					if (joy_l(SC_BTN_RIGHT) = '1') then kb_data(ZX_K_8) <= '1'; end if; -- right
+					if (joy_l(SC_BTN_B) = '1') then kb_data(ZX_K_0) <= '1'; end if; -- fire	
+				end if;
+				if joy_type_r = JOY_TYPE_CURSOR then
+					if (joy_r(SC_BTN_UP) = '1') then kb_data(ZX_K_7) <= '1'; end if; -- up
+					if (joy_r(SC_BTN_DOWN) = '1') then kb_data(ZX_K_6) <= '1'; end if; -- down
+					if (joy_r(SC_BTN_LEFT) = '1') then kb_data(ZX_K_5) <= '1'; end if; -- left
+					if (joy_r(SC_BTN_RIGHT) = '1') then kb_data(ZX_K_8) <= '1'; end if; -- right
+					if (joy_r(SC_BTN_B) = '1') then kb_data(ZX_K_0) <= '1'; end if; -- fire					
+				end if;
+				
+				-- user defined keymapped joysticks / TODO
+				if joy_type_l = JOY_TYPE_USER then
+				end if;
+				
+				if joy_type_r = JOY_TYPE_USER then
+				end if;
+				
+				-- TODO: use user defined mapped joy keys for other joy types (upper unused keys)
+				
 				-- cleanup CS key when SS is marked
 				if (is_ss_used = '1' and is_cs_used = '0') then 
 					kb_data(ZX_K_CS) <= '0';
@@ -499,14 +608,5 @@ process (RESET, CLK)
 	end process;
 	
 	EXT_KEYS <= ext_keys_int;
-	
---	process (RESET, CANCEL_EXT)
---	begin 
---		if RESET = '1' or CANCEL_EXT = '1' then 
---			EXT_KEYS <= (others => '0');
---		else
---			EXT_KEYS <= ext_keys_int;			
---		end if;
---	end process;
 
 end rtl;

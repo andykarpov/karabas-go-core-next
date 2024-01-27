@@ -1,0 +1,24 @@
+INFO:sim:172 - Generating IP...
+Applying current project options...
+Finished applying current project options.
+ERROR:sim - Unable to find
+ERROR:sim -   
+   C:\Projects\xilinx\ZX_Spectrum_Next_FPGA\cores\zxnext\src\ram\init\keyjoy_64_
+ERROR:sim -    6.coe
+ERROR:sim -    Coregen is looking for
+ERROR:sim -   
+   /Projects/xilinx/ZX_Spectrum_Next_FPGA/cores/zxnext/src/ram/init/keyjoy_64_6.
+ERROR:sim -    coe
+ERROR:sim - Unable to find
+ERROR:sim -   
+   C:\Projects\xilinx\ZX_Spectrum_Next_FPGA\cores\zxnext\src\ram\init\keyjoy_64_
+ERROR:sim -    6.coe
+ERROR:sim -    Coregen is looking for
+ERROR:sim -   
+   /Projects/xilinx/ZX_Spectrum_Next_FPGA/cores/zxnext/src/ram/init/keyjoy_64_6.
+ERROR:sim -    coe
+ERROR:sim - An invalid core configuration has been detected during
+ERROR:sim -    Customization. Core parameters will be reset to their default
+   values.
+Cancelled executing Tcl generator.
+Wrote CGP file for project 'keyjoy_sdpram_64_6'.
