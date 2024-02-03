@@ -27,14 +27,12 @@
 ------------------------------------------------------------------------------------------------------------------
 -- TODO:
 -- mouse: implement mouse swap and dpi change (use zxn signals)
--- joysticks: test kempston and md, 
--- joysticks: add mappers to keyboard keys for sinclair 1,2, custom keys, etc (use zxn keymap)
--- joysticks io mode: think what to do
 -- HDD: implement nemoide
 -- FDD: implement via bus ?
 -- FT812: ?
 -- OSD: think about it
 -- GS: add to the zxbus ?
+-- joysticks io mode: think what to do
 -- Bridge second (pi ?) UART to USB!
 
 library ieee;
@@ -2022,8 +2020,8 @@ zxn_mouse_button <= ms_b;
 U_DAC: entity work.PCM5102
 port map (
 	clk => CLK_28,
-	left => "000" & zxn_audio_L,
-	right => "000" & zxn_audio_R,
+	left => "0" & zxn_audio_L & "00",
+	right => "0" & zxn_audio_R & "00",
 	din => DAC_DAT,
 	bck => DAC_BCK,
 	lrck => DAC_LRCK

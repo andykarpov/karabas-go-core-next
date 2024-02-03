@@ -651,68 +651,68 @@ process (RESET, CLK)
 					if (joy_r(SC_BTN_B) = '1') then kb_data(ZX_K_0) <= '1'; end if; -- fire					
 				end if;
 				
-				-- user defined keymapped joysticks
-				if joy_type_l = JOY_TYPE_USER then
-					if (joy_l(SC_BTN_UP) = '1' 	and map_btn_up_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_up_l))) 		<= '1'; end if;
-					if (joy_l(SC_BTN_DOWN) = '1' 	and map_btn_down_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_down_l))) 	<= '1'; end if;
-					if (joy_l(SC_BTN_LEFT) = '1' 	and map_btn_left_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_left_l))) 	<= '1'; end if;
-					if (joy_l(SC_BTN_RIGHT) = '1' and map_btn_right_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_right_l))) 	<= '1'; end if;
-					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
-					if (joy_l(SC_BTN_B) = '1' 		and map_btn_b_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_b_l))) 		<= '1'; end if;
-					if (joy_l(SC_BTN_C) = '1' 		and map_btn_c_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_l))) 		<= '1'; end if;
-					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
-				end if;
-				
-				if joy_type_r = JOY_TYPE_USER then
-					if (joy_r(SC_BTN_UP) = '1' 	and map_btn_up_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_up_r))) 		<= '1'; end if;
-					if (joy_r(SC_BTN_DOWN) = '1' 	and map_btn_down_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_down_r))) 	<= '1'; end if;
-					if (joy_r(SC_BTN_LEFT) = '1' 	and map_btn_left_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_left_r))) 	<= '1'; end if;
-					if (joy_r(SC_BTN_RIGHT) = '1' and map_btn_right_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_right_r))) 	<= '1'; end if;
-					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
-					if (joy_r(SC_BTN_B) = '1' 		and map_btn_b_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_b_r))) 		<= '1'; end if;
-					if (joy_r(SC_BTN_C) = '1' 		and map_btn_c_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_r))) 		<= '1'; end if;
-					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;
-				end if;
-				
-				-- map user defined joy keys for other joy types (upper unused keys)
-
-				if (joy_type_l = JOY_TYPE_SINCLAIR1 or 
-					 joy_type_l = JOY_TYPE_SINCLAIR2 or 
-					 joy_type_l = JOY_TYPE_CURSOR) then
-					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
-					if (joy_l(SC_BTN_C) = '1' 		and map_btn_c_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_l))) 		<= '1'; end if;
-					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
-				end if;
-				
-				if (joy_type_l = JOY_TYPE_KEMPSTON1 or 
-					 joy_type_l = JOY_TYPE_KEMPSTON2) then
-					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
-					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
-				end if;
-				
-				if (joy_type_r = JOY_TYPE_SINCLAIR1 or 
-					 joy_type_r = JOY_TYPE_SINCLAIR2 or 
-					 joy_type_r = JOY_TYPE_CURSOR) then
-					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
-					if (joy_r(SC_BTN_C) = '1' 		and map_btn_c_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_r))) 		<= '1'; end if;
-					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;					 
-				end if;
-
-				if (joy_type_r = JOY_TYPE_KEMPSTON1 or 
-					 joy_type_r = JOY_TYPE_KEMPSTON2) then
-					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
-					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;					 
-				end if;
-				
-				if (joy_l(SC_BTN_X) = '1' 		and map_btn_x_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_x_l))) 		<= '1'; end if;
-				if (joy_l(SC_BTN_Y) = '1' 		and map_btn_y_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_y_l))) 		<= '1'; end if;
-				if (joy_l(SC_BTN_Z) = '1' 		and map_btn_z_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_z_l))) 		<= '1'; end if;
-				if (joy_l(SC_BTN_MODE) = '1' 	and map_btn_mode_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_mode_l))) 	<= '1'; end if;
-
-				if (joy_r(SC_BTN_X) = '1' 		and map_btn_x_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_x_r))) 		<= '1'; end if;
-				if (joy_r(SC_BTN_Y) = '1' 		and map_btn_y_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_y_r))) 		<= '1'; end if;
-				if (joy_r(SC_BTN_Z) = '1' 		and map_btn_z_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_z_r))) 		<= '1'; end if;
-				if (joy_r(SC_BTN_MODE) = '1' 	and map_btn_mode_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_mode_r))) 	<= '1'; end if;				
+--				-- user defined keymapped joysticks
+--				if joy_type_l = JOY_TYPE_USER then
+--					if (joy_l(SC_BTN_UP) = '1' 	and map_btn_up_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_up_l))) 		<= '1'; end if;
+--					if (joy_l(SC_BTN_DOWN) = '1' 	and map_btn_down_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_down_l))) 	<= '1'; end if;
+--					if (joy_l(SC_BTN_LEFT) = '1' 	and map_btn_left_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_left_l))) 	<= '1'; end if;
+--					if (joy_l(SC_BTN_RIGHT) = '1' and map_btn_right_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_right_l))) 	<= '1'; end if;
+--					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
+--					if (joy_l(SC_BTN_B) = '1' 		and map_btn_b_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_b_l))) 		<= '1'; end if;
+--					if (joy_l(SC_BTN_C) = '1' 		and map_btn_c_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_l))) 		<= '1'; end if;
+--					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
+--				end if;
+--				
+--				if joy_type_r = JOY_TYPE_USER then
+--					if (joy_r(SC_BTN_UP) = '1' 	and map_btn_up_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_up_r))) 		<= '1'; end if;
+--					if (joy_r(SC_BTN_DOWN) = '1' 	and map_btn_down_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_down_r))) 	<= '1'; end if;
+--					if (joy_r(SC_BTN_LEFT) = '1' 	and map_btn_left_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_left_r))) 	<= '1'; end if;
+--					if (joy_r(SC_BTN_RIGHT) = '1' and map_btn_right_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_right_r))) 	<= '1'; end if;
+--					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
+--					if (joy_r(SC_BTN_B) = '1' 		and map_btn_b_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_b_r))) 		<= '1'; end if;
+--					if (joy_r(SC_BTN_C) = '1' 		and map_btn_c_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_r))) 		<= '1'; end if;
+--					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;
+--				end if;
+--				
+--				-- map user defined joy keys for other joy types (upper unused keys)
+--
+--				if (joy_type_l = JOY_TYPE_SINCLAIR1 or 
+--					 joy_type_l = JOY_TYPE_SINCLAIR2 or 
+--					 joy_type_l = JOY_TYPE_CURSOR) then
+--					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
+--					if (joy_l(SC_BTN_C) = '1' 		and map_btn_c_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_l))) 		<= '1'; end if;
+--					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
+--				end if;
+--				
+--				if (joy_type_l = JOY_TYPE_KEMPSTON1 or 
+--					 joy_type_l = JOY_TYPE_KEMPSTON2) then
+--					if (joy_l(SC_BTN_A) = '1' 		and map_btn_a_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_l))) 		<= '1'; end if;
+--					if (joy_l(SC_BTN_START) = '1' and map_btn_start_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_l))) 	<= '1'; end if;
+--				end if;
+--				
+--				if (joy_type_r = JOY_TYPE_SINCLAIR1 or 
+--					 joy_type_r = JOY_TYPE_SINCLAIR2 or 
+--					 joy_type_r = JOY_TYPE_CURSOR) then
+--					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
+--					if (joy_r(SC_BTN_C) = '1' 		and map_btn_c_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_c_r))) 		<= '1'; end if;
+--					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;					 
+--				end if;
+--
+--				if (joy_type_r = JOY_TYPE_KEMPSTON1 or 
+--					 joy_type_r = JOY_TYPE_KEMPSTON2) then
+--					if (joy_r(SC_BTN_A) = '1' 		and map_btn_a_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_a_r)))	 	<= '1'; end if;
+--					if (joy_r(SC_BTN_START) = '1' and map_btn_start_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_start_r))) 	<= '1'; end if;					 
+--				end if;
+--				
+--				if (joy_l(SC_BTN_X) = '1' 		and map_btn_x_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_x_l))) 		<= '1'; end if;
+--				if (joy_l(SC_BTN_Y) = '1' 		and map_btn_y_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_y_l))) 		<= '1'; end if;
+--				if (joy_l(SC_BTN_Z) = '1' 		and map_btn_z_l(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_z_l))) 		<= '1'; end if;
+--				if (joy_l(SC_BTN_MODE) = '1' 	and map_btn_mode_l(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_mode_l))) 	<= '1'; end if;
+--
+--				if (joy_r(SC_BTN_X) = '1' 		and map_btn_x_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_x_r))) 		<= '1'; end if;
+--				if (joy_r(SC_BTN_Y) = '1' 		and map_btn_y_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_y_r))) 		<= '1'; end if;
+--				if (joy_r(SC_BTN_Z) = '1' 		and map_btn_z_r(5 downto 3) 		<= "100") then kb_data(to_integer(unsigned(map_btn_z_r))) 		<= '1'; end if;
+--				if (joy_r(SC_BTN_MODE) = '1' 	and map_btn_mode_r(5 downto 3) 	<= "100") then kb_data(to_integer(unsigned(map_btn_mode_r))) 	<= '1'; end if;				
 				
 				-- cleanup CS key when SS is marked
 				if (is_ss_used = '1' and is_cs_used = '0') then 

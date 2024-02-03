@@ -31,7 +31,7 @@ module PCM5102(clk,left,right,din,bck,lrck);
 	reg [5:0]   i2sword = 0;		// 6 bit = 16 steps for left + right
 	always @(negedge i2s_clk[DAC_CLK_DIV_BITS]) begin
 		lrck	 	<= i2sword[5];
-		din 		<= lrck ? r2c[16 - i2sword[4:1]] : l2c[16 - i2sword[4:1]];	// blit data bits
+		din 		<= lrck ? r2c[15 - i2sword[4:1]] : l2c[15 - i2sword[4:1]];	// blit data bits
 		bck			<= i2sword[0];
 		i2sword		<= i2sword + 1;
 	end	
