@@ -17,3 +17,4 @@ Ported version of the ZX Spectrum Next FPGA sources to the Karabas Go hardware
 - Add a CF card (NemoIDE ?)
 - Fix joystick custom mapped keys
 - Addd General Sound support
+- Bridge USB UART to the Pi UART
