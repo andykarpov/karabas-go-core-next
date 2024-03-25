@@ -48,7 +48,9 @@ entity turbosound is
 --    port_a_o       : out std_logic_vector(7 downto 0);    -- current R14 state
    
       pcm_ay_L_o     : out std_logic_vector(11 downto 0);
-      pcm_ay_R_o     : out std_logic_vector(11 downto 0)
+      pcm_ay_R_o     : out std_logic_vector(11 downto 0);
+		
+		midi_tx_o      : out std_logic
    );
 end entity;
 
@@ -108,6 +110,8 @@ architecture rtl of turbosound is
    signal psg0_R_pan       : std_logic_vector(9 downto 0);
    signal psg1_R_pan       : std_logic_vector(9 downto 0);
    signal psg2_R_pan       : std_logic_vector(9 downto 0);
+	
+	signal port_a           : std_logic_vector(7 downto 0) := "00000000";
 
 begin
 
@@ -172,7 +176,7 @@ begin
       ctrl_aymode       => aymode_i,             -- 0 = YM, 1 = AY
       -- I/O ports
       port_a_i          => (others => '1'),      -- external input to IO Port A (reg 14) AY#0
-      port_a_o          => open,                 -- last byte written to reg 14 (not the same as reading from reg 14) AY#0
+      port_a_o          => port_a,                 -- last byte written to reg 14 (not the same as reading from reg 14) AY#0
       port_b_i          => (others => '1'),
       port_b_o          => open,
       -- audio channels out
@@ -180,6 +184,8 @@ begin
       O_AUDIO_B         => psg0_B,
       O_AUDIO_C         => psg0_C
    );
+	
+	midi_tx_o <= port_a(2);
    
    -- stereo / mono mix
    

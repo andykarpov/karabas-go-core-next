@@ -247,7 +247,9 @@ entity zxnext is
       i_XADC_EOS           : in std_logic;
       o_XADC_CONVST        : out std_logic;
 
-      o_XADC_CONTROL       : out std_logic
+      o_XADC_CONTROL       : out std_logic;
+		
+		o_MIDI_TX 				: out std_logic
    );
 end entity;
 
@@ -6348,7 +6350,9 @@ begin
 --    port_a_o          => open,
    
       pcm_ay_L_o        => pcm_ay_L,
-      pcm_ay_R_o        => pcm_ay_R
+      pcm_ay_R_o        => pcm_ay_R,
+		
+		midi_tx_o 			=> o_MIDI_TX
    );
 
    process (i_CLK_CPU)

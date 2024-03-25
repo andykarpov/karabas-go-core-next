@@ -1,24 +1,55 @@
 INFO:sim:172 - Generating IP...
 Applying current project options...
 Finished applying current project options.
-ERROR:sim - Unable to find
-ERROR:sim -   
-   C:\Projects\xilinx\ZX_Spectrum_Next_FPGA\cores\zxnext\src\ram\init\keyjoy_64_
-ERROR:sim -    6.coe
-ERROR:sim -    Coregen is looking for
-ERROR:sim -   
-   /Projects/xilinx/ZX_Spectrum_Next_FPGA/cores/zxnext/src/ram/init/keyjoy_64_6.
-ERROR:sim -    coe
-ERROR:sim - Unable to find
-ERROR:sim -   
-   C:\Projects\xilinx\ZX_Spectrum_Next_FPGA\cores\zxnext\src\ram\init\keyjoy_64_
-ERROR:sim -    6.coe
-ERROR:sim -    Coregen is looking for
-ERROR:sim -   
-   /Projects/xilinx/ZX_Spectrum_Next_FPGA/cores/zxnext/src/ram/init/keyjoy_64_6.
-ERROR:sim -    coe
-ERROR:sim - An invalid core configuration has been detected during
-ERROR:sim -    Customization. Core parameters will be reset to their default
-   values.
-Cancelled executing Tcl generator.
-Wrote CGP file for project 'keyjoy_sdpram_64_6'.
+WARNING:sim - A core named 'pll_midi' already exists in the project. Output
+   products for this core may be overwritten.
+Resolving generics for 'pll_midi'...
+WARNING:sim - A core named 'pll_midi' already exists in the project. Output
+   products for this core may be overwritten.
+Applying external generics to 'pll_midi'...
+Delivering associated files for 'pll_midi'...
+WARNING:sim - Component clk_wiz_v3_6 does not have a valid model name for VHDL
+   synthesis
+Delivering EJava files for 'pll_midi'...
+Delivered 3 files into directory
+/home/andy/Documents/Projects/Retrocomp/ZX-Spectrum/karabas-go/karabas-go-core-n
+ext/src/ipcore_dir/tmp/_cg/pll_midi
+Delivered 1 file into directory
+/home/andy/Documents/Projects/Retrocomp/ZX-Spectrum/karabas-go/karabas-go-core-n
+ext/src/ipcore_dir/tmp/_cg/pll_midi
+Generating ASY schematic symbol...
+Loading device for application Rf_Device from file '6slx25.nph' in environment
+/opt/Xilinx/14.7/ISE_DS/ISE/.
+INFO:sim:949 - Finished generation of ASY schematic symbol.
+Generating SYM schematic symbol for 'pll_midi'...
+Generating ISE project...
+XCO file found: pll_midi.xco
+XMDF file found: pll_midi_xmdf.tcl
+Adding
+/home/andy/Documents/Projects/Retrocomp/ZX-Spectrum/karabas-go/karabas-go-core-n
+ext/src/ipcore_dir/tmp/_cg/pll_midi.asy -view all -origin_type imported
+Adding
+/home/andy/Documents/Projects/Retrocomp/ZX-Spectrum/karabas-go/karabas-go-core-n
+ext/src/ipcore_dir/tmp/_cg/pll_midi.ucf -view all -origin_type created
+Adding
+/home/andy/Documents/Projects/Retrocomp/ZX-Spectrum/karabas-go/karabas-go-core-n
+ext/src/ipcore_dir/tmp/_cg/pll_midi.vhd -view all -origin_type created
+INFO:HDLCompiler:1061 - Parsing VHDL file
+   "/home/andy/Documents/Projects/Retrocomp/ZX-Spectrum/karabas-go/karabas-go-co
+   re-next/src/ipcore_dir/tmp/_cg/pll_midi.vhd" into library work
+INFO:ProjectMgmt - Parsing design hierarchy completed successfully.
+Adding
+/home/andy/Documents/Projects/Retrocomp/ZX-Spectrum/karabas-go/karabas-go-core-n
+ext/src/ipcore_dir/tmp/_cg/pll_midi.vho -view all -origin_type imported
+INFO:TclTasksC:2116 - The automatic calculation of top has been turned-off.
+   Please set the new top explicitly by running the "project set top" command.
+   To re-calculate the new top automatically, set the "Auto Implementation Top"
+   property to true.
+Top level has been set to "/pll_midi"
+Generating README file...
+Generating FLIST file...
+INFO:sim:948 - Finished FLIST file generation.
+Launching README viewer...
+Moving files to output directory...
+Finished moving files to output directory
+Wrote CGP file for project 'pll_midi'.

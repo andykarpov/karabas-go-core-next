@@ -126,7 +126,21 @@ entity karabas_go is
 		MCU_CS_N 			: in  	STD_LOGIC;
 		MCU_SCK 				: in  	STD_LOGIC;
 		MCU_MOSI 			: in  	STD_LOGIC;
-		MCU_MISO 			: out  	STD_LOGIC);
+		MCU_MISO 			: out  	STD_LOGIC;
+		MCU_IO 				: in 		std_logic_vector(3 downto 0);
+			  
+		MIDI_TX 				: out 	std_logic;
+		MIDI_CLK 			: out 	std_logic;
+		MIDI_RESET_N 		: out 	std_logic;
+			  
+		FLASH_CS_N 			: out 	std_logic;
+		FLASH_DO 			: in 		std_logic;
+		FLASH_DI 			: out 	std_logic;
+		FLASH_SCK 			: out 	std_logic;
+		FLASH_WP_N 			: out 	std_logic;
+		FLASH_HOLD_N 		: out 	std_logic
+		
+		);
 end entity;
 
 architecture rtl of karabas_go is
@@ -551,6 +565,9 @@ architecture rtl of karabas_go is
 	-- mcu related
 	signal mcu_busy 					: std_logic := '0';
 	signal areset 						: std_logic := '0';
+	
+	-- midi clk
+	signal clk_12 						: std_logic := '0';
 
 begin
 
@@ -1048,7 +1065,7 @@ begin
       );
 
    end generate;
-
+	
    -- Clock Enables
    
    process (CLK_28)
@@ -1857,7 +1874,10 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
       i_XADC_EOS           => '0',
       o_XADC_CONVST        => open,
 
-      o_XADC_CONTROL       => open
+      o_XADC_CONTROL       => open,
+		
+		-- MIDI OUT
+		o_MIDI_TX				=> MIDI_TX
    );
 
 ----------- Karabas units ----------------
@@ -2074,6 +2094,36 @@ BEEPER <= zxn_speaker_excl;
 
 -- CTS is always ground
 UART_CTS <= '0';
+
+-- flash is disabled now
+FLASH_CS_N <= '1';
+FLASH_DI <= '1';
+FLASH_SCK <= '1';
+FLASH_WP_N <= '1';
+FLASH_HOLD_N <= '1';
+
+-- midi reset
+MIDI_RESET_N <= not reset;
+
+-- midi PLL
+u_pll_midi: entity work.pll_midi
+port map(
+	CLK_IN1 => CLK_28,
+	CLK_OUT1 => clk_12
+);
+
+-- midi clock
+u_midi_clk: ODDR2 
+port map(
+	Q => MIDI_CLK,
+	C0 => clk_12,
+	C1 => not clk_12,
+	CE => '1',
+	D0 => '1',
+	D1 => '0',
+	R => '0',
+	S => '0'
+);
 
 end architecture;
 
