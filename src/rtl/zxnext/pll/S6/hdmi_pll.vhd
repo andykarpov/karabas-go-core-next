@@ -430,29 +430,33 @@ begin
       end if;
    end process;
    
-   BUFG_CLKHDMI   : BUFGCE
-   port map
-   (
-      CE => locked_hdmi,
-      I  => clkhdmi,
-      O  => CLK2OUT
-   );
-
-   BUFG_CLKHDMI5  : BUFGCE
-   port map
-   (
-      CE => locked_hdmi,
-      I  => clkhdmi5,
-      O  => CLK0OUT
-   );
-
-   BUFG_CLKHDMI5N : BUFGCE_1
-   port map
-   (
-      CE => locked_hdmi,
-      I  => clkhdmi5n,
-      O  => CLK1OUT
-   );
+--   BUFG_CLKHDMI   : BUFGCE
+--   port map
+--   (
+--      CE => locked_hdmi,
+--      I  => clkhdmi,
+--      O  => CLK2OUT
+--   );
+--
+--   BUFG_CLKHDMI5  : BUFGCE
+--   port map
+--   (
+--      CE => locked_hdmi,
+--      I  => clkhdmi5,
+--      O  => CLK0OUT
+--   );
+--
+--   BUFG_CLKHDMI5N : BUFGCE_1
+--   port map
+--   (
+--      CE => locked_hdmi,
+--      I  => clkhdmi5n,
+--      O  => CLK1OUT
+--   );
+	
+	CLK0OUT <= clkhdmi5;
+	CLK1OUT <= clkhdmi5n;
+	CLK2OUT <= clkhdmi;
    
    VALID <= locked_hdmi;
 

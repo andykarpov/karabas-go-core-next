@@ -1,0 +1,22 @@
+{
+    "id": "zxnext",
+    "name": "ZX Spectrum Next",
+    "build": "24041713",
+    "bitstream": "karabas_mini.bin",
+    "visible": true,
+    "type": "none",
+    "order": 5,
+    "eeprom_bank": 2,
+    "rtc_mode": 1,
+    "roms": [],
+    "osd": [
+        {"type": "T", "bits": 1, "name": "Hard Reset", "options": null, "default": 0, "hotkey": "F1"},
+        {"type": "T", "bits": 1, "name": "Scandoubler", "options": null, "default": 0, "hotkey": "F2"},
+        {"type": "T", "bits": 1, "name": "50 / 60 Hz", "options": null, "default": 0, "hotkey": "F3"},
+        {"type": "T", "bits": 1, "name": "Soft Reset", "options": null, "default": 0, "hotkey": "F4"},
+        {"type": "T", "bits": 1, "name": "Scanlines", "options": null, "default": 0, "hotkey": "F7"},
+        {"type": "T", "bits": 1, "name": "CPU Speed", "options": null, "default": 0, "hotkey": "F8"},
+        {"type": "T", "bits": 1, "name": "Multiface", "options": null, "default": 0, "hotkey": "F9"},
+        {"type": "T", "bits": 1, "name": "DivMMC", "options": null, "default": 0, "hotkey": "F10"}
+    ]
+}
