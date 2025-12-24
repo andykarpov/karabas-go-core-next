@@ -591,7 +591,6 @@ architecture rtl of karabas_minig is
 	
 	-- adc
 	signal adc_l, adc_r 				: std_logic_vector(23 downto 0);
-	signal audio_mix_l, audio_mix_r : std_logic_vector(16 downto 0);
 
 begin
 
@@ -1537,8 +1536,8 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
          -- PCM audio
       
          I_AUDIO_ENABLE => zxn_hdmi_audio,
-         I_AUDIO_PCM_L  => audio_mix_l(15 downto 0),
-         I_AUDIO_PCM_R  => audio_mix_r(15 downto 0),
+         I_AUDIO_PCM_L  => '0' & zxn_audio_L & "00",
+         I_AUDIO_PCM_R  => '0' & zxn_audio_R & "00",
       
          -- TMDS parallel pixel synchronous outputs (serialize LSB first)
       
@@ -2231,12 +2230,6 @@ port map(
 	r_data_rx => adc_r
 );
 
--- TODO: fix ADC noise / clicks 
---audio_mix_l <= ("0" & adc_l(23 downto 8)) + ("00" & zxn_audio_L & "00");
---audio_mix_r <= ("0" & adc_r(23 downto 8)) + ("00" & zxn_audio_R & "00");
-audio_mix_l <= '0' & zxn_audio_L & zxn_audio_L(3 downto 2) & '0';
-audio_mix_r <= '0' & zxn_audio_R & zxn_audio_L(3 downto 2) & '0';
-
 -- ADC_CLK output buf
 ODDR2_ADC: ODDR2
 port map(
@@ -2252,10 +2245,13 @@ port map(
 
 -- DAC
 u_dac : entity work.PCM5102
+generic map(
+	DAC_CLK_DIV_BITS => 2
+)
 port map(
 	clk => CLK_28,
-	left => audio_mix_l(15 downto 0),
-	right => audio_mix_r(15 downto 0),
+	left => '0' & zxn_audio_L & "00",
+	right => '0' & zxn_audio_R & "00",
 	bck => DAC_BCK,
 	lrck => DAC_WS,
 	din => DAC_DAT
