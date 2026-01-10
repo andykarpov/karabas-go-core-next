@@ -399,6 +399,14 @@ architecture rtl of karabas_mini is
    signal tdms_g                 : std_logic_vector(9 downto 0);
    signal tdms_b                 : std_logic_vector(9 downto 0);
    
+	signal dvi_r						: std_logic_vector(9 downto 0);
+	signal dvi_g						: std_logic_vector(9 downto 0);
+	signal dvi_b						: std_logic_vector(9 downto 0);
+	
+	signal tmds_r_mux					: std_logic_vector(9 downto 0);
+	signal tmds_g_mux					: std_logic_vector(9 downto 0);
+	signal tmds_b_mux					: std_logic_vector(9 downto 0);	
+	
    -- buttons, joystick, mouse, keyboard
    
    signal zxn_buttons            : std_logic_vector(1 downto 0);
@@ -587,6 +595,10 @@ architecture rtl of karabas_mini is
 	-- adc
 	signal adc_l, adc_r 				: std_logic_vector(23 downto 0);
 	signal audio_mix_l, audio_mix_r : std_logic_vector(16 downto 0);
+	
+	-- hw setup
+	signal hwid							: std_logic_vector(7 downto 0);
+	signal dvi_only					: std_logic;	
 
 begin
 
@@ -1551,6 +1563,19 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
          i_VSYNC_END      => std_logic_vector(hdmi_max_vsync),
          i_VLAST          => std_logic_vector(hdmi_max_vc)
       );
+		
+		dvi: entity work.dvi
+		port map(
+			CLK			=> CLK_HDMI,
+			RESET			=> not clk_hdmi_valid,
+			RGB			=> toHDMI_rgb(8 downto 6) & toHDMI_rgb(8 downto 6) & toHDMI_rgb(8 downto 7) & toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 4) & toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 1),
+			HSYNC			=> toHDMI_hsync,
+			VSYNC			=> toHDMI_vsync,
+			DE				=> not toHDMI_blank,
+			ENC_RED		=> dvi_r,
+			ENC_GREEN	=> dvi_g,
+			ENC_BLUE		=> dvi_b
+		);
 
       hdmi: entity work.hdmi
       generic map
@@ -1593,15 +1618,19 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
       tdms_b <= (others => '0');
    
    end generate;
+	
+	tmds_r_mux <= dvi_r when dvi_only = '1' else tdms_r;
+	tmds_g_mux <= dvi_g when dvi_only = '1' else tdms_g;
+	tmds_b_mux <= dvi_b when dvi_only = '1' else tdms_b;	
 
    hdmio: entity work.hdmi_out_xilinx_s6
    port map (
       clock_pixel_i     => CLK_HDMI,
       clock_tdms_i      => CLK_HDMIx5,
       clock_tdms_n_i    => CLK_HDMIx5_n,
-      red_i             => tdms_r,
-      green_i           => tdms_g,
-      blue_i            => tdms_b,
+      red_i             => tmds_r_mux,
+      green_i           => tmds_g_mux,
+      blue_i            => tmds_b_mux,
       tmds_out_p        => TMDS_P,
       tmds_out_n        => TMDS_N
    );
@@ -2110,6 +2139,9 @@ port map(
 	ROMLOAD_ADDR => open,
 	ROMLOAD_DATA => open,
 	ROMLOAD_WR => open,
+	
+	HWID	=> hwid,
+	DVI_ONLY	=> dvi_only,
 	
 	SOFTSW_COMMAND => softsw_command,	
 	OSD_COMMAND => osd_command,

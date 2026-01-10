@@ -63,6 +63,10 @@ entity mcu is
     -- osd command
 	 OSD_COMMAND: out std_logic_vector(15 downto 0);
 	 
+	 -- hw setup
+	 HWID : out std_logic_vector(7 downto 0) := (others => '0');
+	 DVI_ONLY : out std_logic := '0';
+	 
 	 -- busy
 	 BUSY: buffer std_logic := '0'
 	 
@@ -97,6 +101,7 @@ end component;
 	-- 11, 12 - usb gamepad, joy : todo
 
 	constant CMD_OSD 			: std_logic_vector(7 downto 0) := x"20";
+	constant CMD_HW_SETUP	: std_logic_vector(7 downto 0) := x"F9";
 	constant CMD_RTC 			: std_logic_vector(7 downto 0) := x"FA";
 
 	constant CMD_FLASHBOOT  : std_logic_vector(7 downto 0) := x"FB";
@@ -288,6 +293,14 @@ begin
 						rtcr_a <= spi_do(15 downto 8);
 						rtcr_d <= spi_do(7 downto 0);
 						rtcr_command <= not rtcr_command;
+						
+					-- hw setup
+					when CMD_HW_SETUP =>
+						case spi_do(15 downto 8) is
+							when x"00" => HWID <= spi_do(7 downto 0);
+							when x"01" => DVI_ONLY <= spi_do(0);
+							when others => null;
+						end case;
 
 					-- init start
 					when CMD_INIT_START => BUSY <= '1';
