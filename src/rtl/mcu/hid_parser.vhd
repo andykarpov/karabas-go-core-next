@@ -11,7 +11,7 @@ use IEEE.std_logic_unsigned.all;
 entity hid_parser is
 	generic 
 	(
-		NUM_KEYS : integer range 1 to 6 := 2 -- number of simultaneously pressed keys to process
+		NUM_KEYS : integer range 1 to 6 := 5 -- number of simultaneously pressed keys to process
 	);
 	port
 	(
@@ -29,7 +29,7 @@ entity hid_parser is
 	 KB_DAT5 : in std_logic_vector(7 downto 0);
 
 	 -- cpu address for spectrum keyboard row address
-	 A : in std_logic_vector(15 downto 8);
+	 A : in std_logic_vector(15 downto 8); 
 	 
 	 -- keyboard output data
 	 KB_DO : out std_logic_vector(4 downto 0);
