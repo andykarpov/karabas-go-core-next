@@ -1,7 +1,7 @@
 {
     "id": "zxnext",
     "name": "ZX Spectrum Next",
-    "build": "26011000",
+    "build": "26020623",
     "bitstream": "karabas_mini.bin",
     "visible": true,
     "type": "none",
