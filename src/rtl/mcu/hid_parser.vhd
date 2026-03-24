@@ -64,6 +64,8 @@ entity hid_parser is
 	 -- joysticks enabled (active 0)
 	 JOY_EN_N : in std_logic := '1';
 	 
+	 F_KEYS : out std_logic_vector(12 downto 1) := (others => '0');
+	 
 	 -- mapper from zxnext TODO
     KEYMAP_ADDR        : in std_logic_vector(4 downto 0);   -- left/right (4), button number (3:0)
     KEYMAP_DATA        : in std_logic_vector(5 downto 0);   -- membrane row (5:3), membrane col (2:0)
@@ -275,8 +277,11 @@ process (RESET, CLK)
 			is_ss_used := '0';
 			macro_cnt <= (others => '0');
 			ext_keys_int <= (others => '0');
+			F_KEYS <= (others => '0');
 			
 		elsif CLK'event and CLK = '1' then
+				
+			F_KEYS <= (others => '0');
 				
 			-- macro state machine
 			if is_macros = '1' then 
@@ -578,18 +583,18 @@ process (RESET, CLK)
 					when X"4d" =>	ext_keys_int(EX_GRAPH) <= '1';
 					
 					-- Fx keys
-					--when X"3a" => null;  -- F1
-					--when X"3b" => null;	-- F2
-					--when X"3c" => null;	-- F3
-					--when X"3d" => null;	-- F4
-					--when X"3e" => null;	-- F5
-					--when X"3f" => null;	-- F6
-					--when X"40" => null;	-- F7
-					--when X"41" => null;	-- F8
-					--when X"42" => null;	-- F9
-					--when X"43" => null;	-- F10
-					--when X"44" => null;	-- F11
-					--when X"45" => null;	-- F12
+					when X"3a" => F_KEYS(1) <= '1';  -- F1
+					when X"3b" => F_KEYS(2) <= '1';	-- F2
+					when X"3c" => F_KEYS(3) <= '1';	-- F3
+					when X"3d" => F_KEYS(4) <= '1';	-- F4
+					when X"3e" => F_KEYS(5) <= '1';	-- F5
+					when X"3f" => F_KEYS(6) <= '1';	-- F6
+					when X"40" => F_KEYS(7) <= '1';	-- F7
+					when X"41" => F_KEYS(8) <= '1';	-- F8
+					when X"42" => F_KEYS(9) <= '1';	-- F9
+					when X"43" => F_KEYS(10) <= '1';	-- F10
+					when X"44" => F_KEYS(11) <= '1';	-- F11
+					when X"45" => F_KEYS(12) <= '1';	-- F12
 	 
 					-- Soft-only keys
 					--when X"46" =>	-- PrtScr

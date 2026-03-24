@@ -547,6 +547,8 @@ architecture rtl of karabas_mini is
 	signal kb_cpu_speed 				: std_logic := '0';
 	signal kb_multiface 				: std_logic := '0';
 	signal kb_divmmc 					: std_logic := '0';
+	signal kb_buttons					: std_logic_vector(1 downto 0) := (others => '0');
+	signal fn_keys						: std_logic_vector(12 downto 1);
 
 	-- Mouse
 	signal ms_x							: std_logic_vector(7 downto 0);
@@ -1857,18 +1859,19 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
    --  F9 = m1 button (multiface nmi)
    -- F10 = drive button (divmmc nmi)
 
-   zxn_function_keys <= 
-        kb_divmmc & 
-        kb_multiface & 
-        kb_cpu_speed & 
-        kb_scanline & 
-        "00" & 
-        kb_soft_reset & 
-        kb_60hz & 
-        kb_scandoubler & 
-        kb_hard_reset;
+   zxn_function_keys <= fn_keys(10 downto 1);
+--        kb_divmmc & 
+--        kb_multiface & 
+--        kb_cpu_speed & 
+--        kb_scanline & 
+--        "00" & 
+--        kb_soft_reset & 
+--        kb_60hz & 
+--        kb_scandoubler & 
+--        kb_hard_reset;
 
-   zxn_buttons <= "00"; -- kb_divmmc & kb_multiface;
+   --zxn_buttons <= "00"; -- kb_divmmc & kb_multiface;
+	zxn_buttons <= (kb_buttons(1) or fn_keys(10)) & (kb_buttons(0) or fn_keys(9));
       
    zxnext : entity work.zxnext
    generic map
@@ -2126,6 +2129,8 @@ port map(
 	JOY_L => joy_l,
 	JOY_R => joy_r,
 	
+	BTNS => kb_buttons,
+	
 	RTC_A =>  "00" & rtc_a(5 downto 0),
 	RTC_DI => rtc_di,
 	RTC_DO => rtc_do,
@@ -2194,6 +2199,9 @@ port map (
 	JOY_TYPE_R => zxn_joy_right_type,
 	JOY_L => zxn_joy_left,
 	JOY_R => zxn_joy_right,
+	
+	-- fn keys
+	F_KEYS => fn_keys,
 	
 	-- joy mapper
 	JOY_EN_N => zxn_joy_io_mode_en,

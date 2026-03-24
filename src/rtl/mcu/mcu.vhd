@@ -39,6 +39,8 @@ entity mcu is
 	 -- joysticks
 	 JOY_L			: out std_logic_vector(12 downto 0) := "0000000000000";
 	 JOY_R			: out std_logic_vector(12 downto 0) := "0000000000000";
+	 
+	 BTNS				: out std_logic_vector(1 downto 0) := "00";
 
     -- rtc	 
 	 RTC_A 		: in std_logic_vector(7 downto 0);
@@ -261,6 +263,15 @@ begin
 									  joy_r(11) <= spi_do(3); -- Z
 									  joy_r(12) <= spi_do(4); -- MODE
 
+							when others => null;
+						end case;
+						
+					-- hw buttons
+					when CMD_BTNS => 
+					
+						case spi_do(15 downto 8) is
+							when x"00" => BTNS(0) <= spi_do(0);
+							when x"01" => BTNS(1) <= spi_do(0);
 							when others => null;
 						end case;
 
