@@ -64,6 +64,10 @@ entity mcu is
 
     -- osd command
 	 OSD_COMMAND: out std_logic_vector(15 downto 0);
+
+	 -- dot matrix
+	 MATRIX_CMD : in std_logic_vector(23 downto 0) := (others => '0');
+	 MATRIX_CMD_WR : in std_logic := '0';
 	 
 	 -- hw setup
 	 HWID : out std_logic_vector(7 downto 0) := (others => '0');
@@ -422,6 +426,9 @@ begin
 			elsif RTC_WR_N = '0' AND RTC_CS = '1' and BUSY = '0' then -- add rtc register write to queue
 				queue_wr_req <= '1';
 				queue_di <= CMD_RTC & RTC_A & RTC_DI;
+            elsif MATRIX_CMD_WR = '1' then -- send matrix cmd
+				queue_wr_req <= '1';
+				queue_di <= MATRIX_CMD;
 			elsif queue_rd_empty = '1' or queue_data_count < 5 then -- anti-empty queue
 				queue_wr_req <= '1';
 				queue_di <= CMD_NOPE & x"0000";

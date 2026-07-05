@@ -68,8 +68,8 @@ entity i2s is
 
       -- zx next audio to pi
       
-      i_audio_zxn_L  : in std_logic_vector(12 downto 0);
-      i_audio_zxn_R  : in std_logic_vector(12 downto 0);
+      i_audio_zxn_L  : in std_logic_vector(15 downto 0);
+      i_audio_zxn_R  : in std_logic_vector(15 downto 0);
       o_i2s_sd_pi    : out std_logic;
 
       -- pi audio to zx next
@@ -183,8 +183,8 @@ begin
    
    -- i2s transmit to pi
    
-   audio_zxn_L <= (not i_audio_zxn_L(12)) & i_audio_zxn_L(11 downto 0);
-   audio_zxn_R <= (not i_audio_zxn_R(12)) & i_audio_zxn_R(11 downto 0);
+   audio_zxn_L <= (not i_audio_zxn_L(15)) & i_audio_zxn_L(14 downto 3);
+   audio_zxn_R <= (not i_audio_zxn_R(15)) & i_audio_zxn_R(14 downto 3);
    
    i2s_transmit_mod : entity work.i2s_transmit
    generic map

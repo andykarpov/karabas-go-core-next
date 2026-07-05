@@ -357,10 +357,8 @@ architecture rtl of karabas_minig is
    signal zxn_audio_ear          : std_logic;
    signal zxn_audio_mic          : std_logic;
 
-   signal zxn_audio_L            : std_logic_vector(12 downto 0);
-   signal zxn_audio_R            : std_logic_vector(12 downto 0);
-	signal zxn_audio_M            : std_logic_vector(14 downto 0);
-   signal zxn_audio_M_s          : std_logic_vector(13 downto 0);
+   signal zxn_audio_L            : std_logic_vector(15 downto 0);
+   signal zxn_audio_R            : std_logic_vector(15 downto 0);
 	
    -- video : vga
    
@@ -605,6 +603,13 @@ architecture rtl of karabas_minig is
 	-- hw setup
 	signal hwid							: std_logic_vector(7 downto 0);
 	signal dvi_only					: std_logic;
+	
+	-- dot matrix
+	signal matrix_cmd : std_logic_vector(23 downto 0);
+	signal matrix_cmd_wr : std_logic := '0';
+    
+    -- iorq+wr
+    signal iowr : std_logic := '0';
 
 begin
 
@@ -1563,8 +1568,8 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
          -- PCM audio
       
          I_AUDIO_ENABLE => zxn_hdmi_audio,
-         I_AUDIO_PCM_L  => '0' & zxn_audio_L & "00",
-         I_AUDIO_PCM_R  => '0' & zxn_audio_R & "00",
+         I_AUDIO_PCM_L  => zxn_audio_L,
+         I_AUDIO_PCM_R  => zxn_audio_R,
       
          -- TMDS parallel pixel synchronous outputs (serialize LSB first)
       
@@ -2106,6 +2111,9 @@ port map(
 	ROMLOAD_ADDR => open,
 	ROMLOAD_DATA => open,
 	ROMLOAD_WR => open,
+
+    MATRIX_CMD_WR => matrix_cmd_wr,
+    MATRIX_CMD => matrix_cmd,
 	
 	HWID	=> hwid,
 	DVI_ONLY	=> dvi_only,
@@ -2290,11 +2298,26 @@ generic map(
 )
 port map(
 	clk => CLK_28,
-	left => '0' & zxn_audio_L & "00",
-	right => '0' & zxn_audio_R & "00",
+	left => zxn_audio_L,
+	right => zxn_audio_R,
 	bck => DAC_BCK,
 	lrck => DAC_WS,
 	din => DAC_DAT
+);
+
+iowr <= '1' when o_zxn_cpu_iorq_n = '0' and o_zxn_cpu_wr_n = '0' and o_zxn_cpu_m1_n = '1' else '0';
+
+u_matrix: entity work.dot_matrix
+port map(
+    clk => CLK_28,
+    reset => areset,
+    audio_l => zxn_audio_L,
+    audio_r => zxn_audio_R,
+    iowr    => iowr,
+    ioa     => o_zxn_cpu_a,
+    iod     => o_zxn_cpu_do,
+    cmd_wr  => matrix_cmd_wr,
+    cmd     => matrix_cmd
 );
 
 -- unused signals

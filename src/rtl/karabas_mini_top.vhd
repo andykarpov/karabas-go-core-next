@@ -349,10 +349,8 @@ architecture rtl of karabas_mini is
    signal zxn_audio_ear          : std_logic;
    signal zxn_audio_mic          : std_logic;
 
-   signal zxn_audio_L            : std_logic_vector(12 downto 0);
-   signal zxn_audio_R            : std_logic_vector(12 downto 0);
-	signal zxn_audio_M            : std_logic_vector(14 downto 0);
-   signal zxn_audio_M_s          : std_logic_vector(13 downto 0);
+   signal zxn_audio_L            : std_logic_vector(15 downto 0);
+   signal zxn_audio_R            : std_logic_vector(15 downto 0);
 	
    -- video : vga
    
@@ -2332,11 +2330,8 @@ port map(
 	r_data_rx => adc_r
 );
 
--- TODO: fix ADC noise / clicks 
---audio_mix_l <= ("0" & adc_l(23 downto 8)) + ("00" & zxn_audio_L & "00");
---audio_mix_r <= ("0" & adc_r(23 downto 8)) + ("00" & zxn_audio_R & "00");
-audio_mix_l <= '0' & zxn_audio_L & zxn_audio_L(3 downto 2) & '0';
-audio_mix_r <= '0' & zxn_audio_R & zxn_audio_L(3 downto 2) & '0';
+audio_mix_l <= zxn_audio_L;
+audio_mix_r <= zxn_audio_R;
 
 -- ADC_CLK output buf
 ODDR2_ADC: ODDR2

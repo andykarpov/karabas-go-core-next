@@ -354,8 +354,8 @@ architecture rtl of karabas_go is
    signal zxn_audio_ear          : std_logic;
    signal zxn_audio_mic          : std_logic;
 
-   signal zxn_audio_L            : std_logic_vector(12 downto 0);
-   signal zxn_audio_R            : std_logic_vector(12 downto 0);
+   signal zxn_audio_L            : std_logic_vector(15 downto 0);
+   signal zxn_audio_R            : std_logic_vector(15 downto 0);
 	
 	signal zxn_speaker_excl			: std_logic;
    
@@ -2047,8 +2047,8 @@ zxn_mouse_button <= ms_b;
 U_DAC: entity work.PCM5102
 port map (
 	clk => CLK_28,
-	left => "0" & zxn_audio_L & "00",
-	right => "0" & zxn_audio_R & "00",
+	left => zxn_audio_L,
+	right => zxn_audio_R,
 	din => DAC_DAT,
 	bck => DAC_BCK,
 	lrck => DAC_LRCK

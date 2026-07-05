@@ -164,8 +164,8 @@ entity zxnext is
       o_AUDIO_MIC          : out std_logic;     -- tape output
       o_AUDIO_EAR          : out std_logic;     -- beep output
 
-      o_AUDIO_L            : out std_logic_vector(12 downto 0);   -- pcm audio
-      o_AUDIO_R            : out std_logic_vector(12 downto 0);   -- pcm audio
+      o_AUDIO_L            : out std_logic_vector(15 downto 0);   -- pcm audio
+      o_AUDIO_R            : out std_logic_vector(15 downto 0);   -- pcm audio
 
       -- EXTERNAL SRAM (synchronized to i_CLK_28)
       -- memory transactions complete after one cycle, data read is registered a cycle later but is available asap
@@ -1327,8 +1327,8 @@ architecture rtl of zxnext is
    signal beep_mic_final         : std_logic;
    signal beep_spkr_excl         : std_logic;
    
-   signal pcm_dac_L              : std_logic_vector(8 downto 0);
-   signal pcm_dac_R              : std_logic_vector(8 downto 0);
+   signal pcm_dac_L              : std_logic_vector(15 downto 0);
+   signal pcm_dac_R              : std_logic_vector(15 downto 0);
    
    signal pi_mi2s_sck            : std_logic;
    signal pi_mi2s_ws             : std_logic;
@@ -1339,8 +1339,8 @@ architecture rtl of zxnext is
    signal pi_i2s_audio_L         : std_logic_vector(9 downto 0);
    signal pi_i2s_audio_R         : std_logic_vector(9 downto 0);
    
-   signal pcm_audio_L            : std_logic_vector(12 downto 0);
-   signal pcm_audio_R            : std_logic_vector(12 downto 0);
+   signal pcm_audio_L            : std_logic_vector(15 downto 0);
+   signal pcm_audio_R            : std_logic_vector(15 downto 0);
    
    -- VIDEO
    
@@ -6379,37 +6379,55 @@ begin
 
    -- DAC x 4 (soundrive, covox, specdrum, etc)
    
-   soundrive_mod: entity work.soundrive
-   port map
-   (
-      clock_i        => i_CLK_28,
-      reset_i        => reset or not nr_08_dac_en,
-      
-      cpu_d_i        => cpu_do,
-      
-      -- left
-      
-      chA_wr_i       => port_dac_A_wr,
-      chB_wr_i       => port_dac_B_wr,
-      
-      -- right
-      
-      chC_wr_i       => port_dac_C_wr,
-      chD_wr_i       => port_dac_D_wr,
-
-      -- nextreg mirrors
-      
-      nr_mono_we_i   => nr_2d_we,
-      nr_left_we_i   => nr_2c_we,
-      nr_right_we_i  => nr_2e_we,
-      
-      nr_audio_dat_i => nr_wr_dat,
-      
-      -- pcm audio out
-      
-      pcm_L_o        => pcm_dac_L,
-      pcm_R_o        => pcm_dac_R
-   );
+	soundrive_mod_custom: entity work.soundrive
+	port map
+	(
+		clk				=> i_CLK_28,
+		reset				=> reset or not nr_08_dac_en,
+		din				=> cpu_do,
+		ch_a_wr			=> port_dac_A_wr,
+		ch_b_wr			=> port_dac_B_wr,
+		ch_c_wr			=> port_dac_C_wr,
+		ch_d_wr			=> port_dac_D_wr,
+		nr_mono_we		=> nr_2d_we,
+		nr_left_we		=> nr_2c_we,
+		nr_right_we    => nr_2e_we,
+		nr_audio_dat   => nr_wr_dat,
+		pcm_l				=> pcm_dac_L,
+		pcm_r				=> pcm_dac_R
+	);
+	
+--   soundrive_mod: entity work.soundrive
+--   port map
+--   (
+--      clock_i        => i_CLK_28,
+--      reset_i        => reset or not nr_08_dac_en,
+--      
+--      cpu_d_i        => cpu_do,
+--      
+--      -- left
+--      
+--      chA_wr_i       => port_dac_A_wr,
+--      chB_wr_i       => port_dac_B_wr,
+--      
+--      -- right
+--      
+--      chC_wr_i       => port_dac_C_wr,
+--      chD_wr_i       => port_dac_D_wr,
+--
+--      -- nextreg mirrors
+--      
+--      nr_mono_we_i   => nr_2d_we,
+--      nr_left_we_i   => nr_2c_we,
+--      nr_right_we_i  => nr_2e_we,
+--      
+--      nr_audio_dat_i => nr_wr_dat,
+--      
+--      -- pcm audio out
+--      
+--      pcm_L_o        => pcm_dac_L,
+--      pcm_R_o        => pcm_dac_R
+--   );
    
    -- i2s pi audio
    
@@ -6453,38 +6471,54 @@ begin
    beep_mic_final <= port_fe_mic xor i_AUDIO_EAR xor pi_fe_ear;
    beep_spkr_excl <= nr_06_internal_speaker_beep and nr_08_internal_speaker_en;
    
-   audio_mixer_mod: entity work.audio_mixer
-   port map
-   (
-      clock_i        => i_CLK_28,
-      reset_i        => reset,
-      
-      -- beeper and tape
-      
-      exc_i          => beep_spkr_excl,
-      ear_i          => port_fe_ear,
-      mic_i          => beep_mic_final,
-      
-      -- ay
-      
-      ay_L_i         => pcm_ay_L,
-      ay_R_i         => pcm_ay_R,
-      
-      -- dac
-      
-      dac_L_i        => pcm_dac_L,
-      dac_R_i        => pcm_dac_R,
-      
-      -- pi i2s audio
-      
-      pi_i2s_L_i     => pi_audio_L,
-      pi_i2s_R_i     => pi_audio_R,
-      
-      -- mixed pcm audio out
-      
-      pcm_L_o        => pcm_audio_L,
-      pcm_R_o        => pcm_audio_R
-   );
+	audio_mixer_mod_custom: entity work.audio_mixer
+	port map
+	(
+		clk				=> i_CLK_28,
+		reset				=> reset,
+		exc				=> beep_spkr_excl,
+		ear				=> port_fe_ear,
+		mic				=> beep_mic_final,
+		ay_l				=> pcm_ay_L,
+		ay_r				=> pcm_ay_R,
+		dac_l				=> pcm_dac_L,
+		dac_r				=> pcm_dac_R,
+		pcm_l				=> pcm_audio_L,
+		pcm_r				=> pcm_audio_R
+	);
+	
+--   audio_mixer_mod: entity work.audio_mixer
+--   port map
+--   (
+--      clock_i        => i_CLK_28,
+--      reset_i        => reset,
+--      
+--      -- beeper and tape
+--      
+--      exc_i          => beep_spkr_excl,
+--      ear_i          => port_fe_ear,
+--      mic_i          => beep_mic_final,
+--      
+--      -- ay
+--      
+--      ay_L_i         => pcm_ay_L,
+--      ay_R_i         => pcm_ay_R,
+--      
+--      -- dac
+--      
+--      dac_L_i        => pcm_dac_L,
+--      dac_R_i        => pcm_dac_R,
+--      
+--      -- pi i2s audio
+--      
+--      pi_i2s_L_i     => pi_audio_L,
+--      pi_i2s_R_i     => pi_audio_R,
+--      
+--      -- mixed pcm audio out
+--      
+--      pcm_L_o        => pcm_audio_L,
+--      pcm_R_o        => pcm_audio_R
+--   );
    
    ------------------------------------------------------------
    -- VIDEO ---------------------------------------------------
