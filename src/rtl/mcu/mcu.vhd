@@ -73,6 +73,9 @@ entity mcu is
 	 HWID : out std_logic_vector(7 downto 0) := (others => '0');
 	 DVI_ONLY : out std_logic := '0';
 	 
+	 -- fifo busy
+	 FIFO_BUSY : out std_logic := '0';
+
 	 -- busy
 	 BUSY: buffer std_logic := '0'
 	 
@@ -414,6 +417,8 @@ begin
 		
 		data_count => queue_data_count
 	);
+	
+	FIFO_BUSY <= '1' when queue_data_count >= 448 else '0';
 	
 	-- fifo handling / queue commands to mcu side
 	process(CLK, N_RESET, RTC_WR_N, RTC_CS, queue_wr_full, RTC_A, RTC_DI, queue_wr_req, queue_rd_empty, BUSY)

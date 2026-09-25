@@ -459,6 +459,10 @@ architecture rtl of karabas_minig is
    signal zxn_uart0_tx           : std_logic;
    signal zxn_uart0_rx           : std_logic;
 
+   -- karabas fifo
+
+   signal zxn_fifo_wait_n        : std_logic;
+
    -- expansion bus
    
    signal expbus_type            : std_logic := '1';  -- 0 = fixed, 1 = unmodified
@@ -595,6 +599,7 @@ architecture rtl of karabas_minig is
 
 	-- mcu related
 	signal mcu_busy 					: std_logic := '0';
+	signal fifo_busy					: std_logic := '0';
 	signal areset 						: std_logic := '0';
 	
 	-- adc
@@ -1658,7 +1663,7 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
    zxn_bus_di <= bus_data_i_q;
    zxn_bus_int_n <= bus_int_n_i_q;
    zxn_bus_romcs_n <= bus_romcs_i_q;
-   zxn_bus_wait_n <= bus_wait_n_i_q;
+   zxn_bus_wait_n <= bus_wait_n_i_q and zxn_fifo_wait_n;
    zxn_bus_busreq_n <= bus_busreq_n_i_q;
    zxn_bus_iorqula_n <= bus_iorqula_n_i_q;
    
@@ -2121,9 +2126,12 @@ port map(
 	SOFTSW_COMMAND => softsw_command,	
 	OSD_COMMAND => osd_command,
 	
-	BUSY => mcu_busy
+	BUSY => mcu_busy,
+	FIFO_BUSY => fifo_busy
 	
 );
+
+zxn_fifo_wait_n <= '0' when iowr = '1' and  (zxn_cpu_a = x"FD3B" or zxn_cpu_a = x"FC3B") and fifo_busy = '1' else '1';
 
 U_RTC: entity work.ds1307
 port map (
