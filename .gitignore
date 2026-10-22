@@ -68,3 +68,12 @@ _xmsgs/
 
 # special scripts
 make_core.py
+
+# the inputs of src/Makefile are in git
+!src/karabas_*.prj
+!src/karabas_*.xst
+!src/karabas_*.ut
+
+# make <board>-modes
+src/karabas_*_vga*.log
+src/karabas_*_cpu*.log

@@ -59,7 +59,9 @@ architecture rtl of drp_dcm is
    signal rom_addr       : std_logic_vector(4 downto 0) := (others => '0');
    signal rom_data       : std_logic_vector(7 downto 0);
    
-   type rom_t            is array (0 to 19) of std_logic_vector (7 downto 0);
+   -- karabas: 32 words, the 5-bit address: after the last byte of frame 4 it goes to 20 (an index
+   -- out of the range in simulation)
+   type rom_t            is array (0 to 31) of std_logic_vector (7 downto 0);
    constant rom_dcm      : rom_t := (
       -- 0 = 48K 50Hz
       X"33", X"4A",      -- DCM_1 : D = 52-1, M =  75-1
@@ -75,7 +77,8 @@ architecture rtl of drp_dcm is
       X"1F", X"26",      -- DCM_2 : D = 32-1, M =  39-1
       -- 4 = 128K 60Hz
       X"25", X"30",      -- DCM_1 : D = 38-1, M =  49-1
-      X"3F", X"40"       -- DCM_2 : D = 64-1, M =  65-1
+      X"3F", X"40",      -- DCM_2 : D = 64-1, M =  65-1
+      others => X"00"
    );
 
    signal count          : std_logic_vector(3 downto 0) := (others => '0');

@@ -93,50 +93,8 @@ architecture rtl of sprites is
    constant TOTAL_PATTERN_BITS   : integer := 6;  -- 64 different sprite patterns
    constant TOTAL_PATTERNS       : integer := (2 ** TOTAL_PATTERN_BITS);
 
-   -- coregen
-
-   component sdpram_128_8 is
-   PORT (
-
-      DPRA  : IN  STD_LOGIC_VECTOR(7-1 downto 0) := (OTHERS => '0');
-      CLK   : IN STD_LOGIC;
-      WE    : IN  STD_LOGIC;
-      DPO   : OUT STD_LOGIC_VECTOR(8-1 downto 0);
-      A     : IN  STD_LOGIC_VECTOR(7-1-(4*0*boolean'pos(7>4)) downto 0)
-            := (OTHERS => '0');
-      D     : IN  STD_LOGIC_VECTOR(8-1 downto 0) := (OTHERS => '0')
-
-   );
-   end component;
-
-   component spram_320_9 is
-   PORT (
-
-      CLK   : IN STD_LOGIC;
-      WE    : IN  STD_LOGIC;
-      SPO   : OUT STD_LOGIC_VECTOR(9-1 downto 0);
-      A     : IN  STD_LOGIC_VECTOR(9-1-(4*0*boolean'pos(9>4)) downto 0)
-            := (OTHERS => '0');
-      D     : IN  STD_LOGIC_VECTOR(9-1 downto 0) := (OTHERS => '0')
-
-   );
-   end component;
-
-   component sdpbram_16k_8 is
-   PORT (
-      --Port A
-      WEA   : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
-      ADDRA : IN STD_LOGIC_VECTOR(13 DOWNTO 0);
-      DINA  : IN STD_LOGIC_VECTOR(7 DOWNTO 0);
-      CLKA  : IN STD_LOGIC;
-      --Port B
-      ENB   : IN STD_LOGIC;  --opt port
-      ADDRB : IN STD_LOGIC_VECTOR(13 DOWNTO 0);
-      DOUTB : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
-      CLKB  : IN STD_LOGIC
-
-   );
-   end component;
+   -- karabas: the coregen cores sdpram_128_8, spram_320_9 and sdpbram_16k_8 are replaced by kg_dist_sdpram,
+   -- kg_dist_spram and kg_sdpram of karabas-go-modules (the same ports and latency, see the instances)
 
    -- memory wiring
    
@@ -326,14 +284,17 @@ begin
    -- simple dual port ram (sync write, async read)
    -- X position (bits 7:0)
    
-   attr0 : sdpram_128_8
+   -- karabas: kg_dist_sdpram in place of the coregen sdpram_128_8
+   attr0 : entity work.kg_dist_sdpram
+   generic map (DW => 8, AW => TOTAL_SPRITES_BITS)
    port map (
-      DPRA => spr_attr_a,
-      CLK  => clock_master_180o_i,
-      WE   => attr0_we,
-      DPO  => sprite_attr_0,
-      A    => attr_a,
-      D    => attr_data
+      dpra => spr_attr_a,
+      clk  => clock_master_180o_i,
+      we   => attr0_we,
+      dpo  => sprite_attr_0,
+      spo  => open,
+      a    => attr_a,
+      d    => attr_data
    );
 
 -- attr0 : entity work.sdpram
@@ -354,14 +315,17 @@ begin
    -- simple dual port ram (sync write, async read)
    -- Y position (bits 7:0)
    
-   attr1 : sdpram_128_8
+   -- karabas: kg_dist_sdpram in place of the coregen sdpram_128_8
+   attr1 : entity work.kg_dist_sdpram
+   generic map (DW => 8, AW => TOTAL_SPRITES_BITS)
    port map (
-      DPRA => spr_attr_a,
-      CLK  => clock_master_180o_i,
-      WE   => attr1_we,
-      DPO  => sprite_attr_1,
-      A    => attr_a,
-      D    => attr_data
+      dpra => spr_attr_a,
+      clk  => clock_master_180o_i,
+      we   => attr1_we,
+      dpo  => sprite_attr_1,
+      spo  => open,
+      a    => attr_a,
+      d    => attr_data
    );
 
 -- attr1 : entity work.sdpram
@@ -382,14 +346,17 @@ begin
    -- simple dual port ram (sync write, async read)
    -- bits 7-4 is palette offset, bit 3 is X mirror, bit 2 is Y mirror, bit 1 is the rotate flag and bit 0 is X MSB
    
-   attr2 : sdpram_128_8
+   -- karabas: kg_dist_sdpram in place of the coregen sdpram_128_8
+   attr2 : entity work.kg_dist_sdpram
+   generic map (DW => 8, AW => TOTAL_SPRITES_BITS)
    port map (
-      DPRA => spr_attr_a,
-      CLK  => clock_master_180o_i,
-      WE   => attr2_we,
-      DPO  => sprite_attr_2,
-      A    => attr_a,
-      D    => attr_data
+      dpra => spr_attr_a,
+      clk  => clock_master_180o_i,
+      we   => attr2_we,
+      dpo  => sprite_attr_2,
+      spo  => open,
+      a    => attr_a,
+      d    => attr_data
    );
 
 -- attr2 : entity work.sdpram
@@ -410,14 +377,17 @@ begin
    -- simple dual port ram (sync write, async read)
    -- bit 7 is the visible flag, bit 6 set if fifth attr byte follows, bits 5-0 is Name (pattern index, 0-63)
    
-   attr3 : sdpram_128_8
+   -- karabas: kg_dist_sdpram in place of the coregen sdpram_128_8
+   attr3 : entity work.kg_dist_sdpram
+   generic map (DW => 8, AW => TOTAL_SPRITES_BITS)
    port map (
-      DPRA => spr_attr_a,
-      CLK  => clock_master_180o_i,
-      WE   => attr3_we,
-      DPO  => sprite_attr_3,
-      A    => attr_a,
-      D    => attr_data
+      dpra => spr_attr_a,
+      clk  => clock_master_180o_i,
+      we   => attr3_we,
+      dpo  => sprite_attr_3,
+      spo  => open,
+      a    => attr_a,
+      d    => attr_data
    );
 
 -- attr3 : entity work.sdpram
@@ -438,14 +408,17 @@ begin
    -- simple dual port ram (sync write, async read)
    -- bit 7 set for 4-bit patterns, bit 6 is Name(6), bit 5 is reserved at 0, bits(4:3) XX scale, bits(2:1) YY scale, bit 0 is Y MSB
 
-   attr4 : sdpram_128_8
+   -- karabas: kg_dist_sdpram in place of the coregen sdpram_128_8
+   attr4 : entity work.kg_dist_sdpram
+   generic map (DW => 8, AW => TOTAL_SPRITES_BITS)
    port map (
-      DPRA => spr_attr_a,
-      CLK  => clock_master_180o_i,
-      WE   => attr4_we,
-      DPO  => sprite_attr_4,
-      A    => attr_a,
-      D    => attr_data
+      dpra => spr_attr_a,
+      clk  => clock_master_180o_i,
+      we   => attr4_we,
+      dpo  => sprite_attr_4,
+      spo  => open,
+      a    => attr_a,
+      d    => attr_data
    );
 
 -- attr4 : entity work.sdpram
@@ -469,13 +442,15 @@ begin
 
    -- single port ram (sync write, async read)
    
-   linebuf0 : spram_320_9
+   -- karabas: kg_dist_spram (320 words) in place of the coregen spram_320_9
+   linebuf0 : entity work.kg_dist_spram
+   generic map (DW => 9, AW => 9, DEPTH => 320)
    port map (
-      CLK  => clock_master_180o_i,
-      WE   => l0_we,
-      SPO  => l0_spo,
-      A    => l0_a,
-      D    => l0_d
+      clk  => clock_master_180o_i,
+      we   => l0_we,
+      spo  => l0_spo,
+      a    => l0_a,
+      d    => l0_d
    );
 
 -- linebuf0 : entity work.spram_async
@@ -493,13 +468,15 @@ begin
 
    -- single port ram (sync write, async read)
    
-   linebuf1 : spram_320_9
+   -- karabas: kg_dist_spram (320 words) in place of the coregen spram_320_9
+   linebuf1 : entity work.kg_dist_spram
+   generic map (DW => 9, AW => 9, DEPTH => 320)
    port map (
-      CLK  => clock_master_180o_i,
-      WE   => l1_we,
-      SPO  => l1_spo,
-      A    => l1_a,
-      D    => l1_d
+      clk  => clock_master_180o_i,
+      we   => l1_we,
+      spo  => l1_spo,
+      a    => l1_a,
+      d    => l1_d
    );
 
 -- linebuf1 : entity work.spram_async
@@ -560,17 +537,20 @@ begin
    
    -- simple dual port ram (sync write, sync read zero delay)
    
-   pattern : sdpbram_16k_8
+   -- karabas: kg_sdpram in place of the coregen sdpbram_16k_8, which started with all bytes E3 (its
+   -- default data, the transparent index): sprite_pattern_e3.hex
+   pattern : entity work.kg_sdpram
+   generic map (DW => 8, AW => TOTAL_PATTERN_BITS+8, INIT_FILE => "rtl/zxnext/video/sprite_pattern_e3.hex")
    port map (
-      WEA        => pattern_we,
-      ADDRA      => pattern_a,
-      DINA       => cpu_data_q,
-      CLKA       => clock_master_180o_i,
+      wea        => pattern_we(0),
+      addra      => pattern_a,
+      dina       => cpu_data_q,
+      clka       => clock_master_180o_i,
       --
-      ENB        => '1', 
-      ADDRB      => spr_pat_addr,
-      DOUTB      => spr_pat_data,
-      CLKB       => clock_master_i
+      enb        => '1',
+      addrb      => spr_pat_addr,
+      doutb      => spr_pat_data,
+      clkb       => clock_master_i
    );
 
 -- pattern: entity work.dpram

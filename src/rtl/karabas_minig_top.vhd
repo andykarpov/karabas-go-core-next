@@ -151,6 +151,7 @@ architecture rtl of karabas_minig is
       CLKIN       : in std_logic;
       
       CLK0OUT     : out std_logic;
+      CLK0PLL     : out std_logic;
       CLK1OUT     : out std_logic;
       CLK2OUT     : out std_logic;
       CLK3OUT     : out std_logic;
@@ -169,6 +170,7 @@ architecture rtl of karabas_minig is
       CLKIN       : in std_logic;
       
       CLK0OUT     : out std_logic;
+      CLK0PLL     : out std_logic;
       CLK1OUT     : out std_logic;
       CLK2OUT     : out std_logic;
       CLK3OUT     : out std_logic;
@@ -263,9 +265,11 @@ architecture rtl of karabas_minig is
    -- clocks
    
    signal CLK_50                 : std_logic;
+   signal CLK_50_ibufg           : std_logic;
    signal clk_28_rdy_n           : std_logic;
    
    signal CLK_28                 : std_logic;
+   signal CLK_28_pll             : std_logic;
    signal CLK_28_n               : std_logic;
    signal CLK_14                 : std_logic;
    signal CLK_7                  : std_logic;
@@ -401,18 +405,6 @@ architecture rtl of karabas_minig is
    signal toHDMI_vsync           : std_logic;
    signal toHDMI_blank           : std_logic;
    
-   signal tdms_r                 : std_logic_vector(9 downto 0);
-   signal tdms_g                 : std_logic_vector(9 downto 0);
-   signal tdms_b                 : std_logic_vector(9 downto 0);
-
-	signal dvi_r						: std_logic_vector(9 downto 0);
-	signal dvi_g						: std_logic_vector(9 downto 0);
-	signal dvi_b						: std_logic_vector(9 downto 0);
-	
-	signal tmds_r_mux					: std_logic_vector(9 downto 0);
-	signal tmds_g_mux					: std_logic_vector(9 downto 0);
-	signal tmds_b_mux					: std_logic_vector(9 downto 0);
-   
    -- buttons, joystick, mouse, keyboard
    
    signal zxn_buttons            : std_logic_vector(1 downto 0);
@@ -546,14 +538,6 @@ architecture rtl of karabas_minig is
 	-- karabas signals --
 
 	-- Triggers
-	signal kb_hard_reset 			: std_logic := '0';
-	signal kb_scandoubler 			: std_logic := '0';
-	signal kb_60hz 					: std_logic := '0';
-	signal kb_soft_reset 			: std_logic := '0';
-	signal kb_scanline 				: std_logic := '0';
-	signal kb_cpu_speed 				: std_logic := '0';
-	signal kb_multiface 				: std_logic := '0';
-	signal kb_divmmc 					: std_logic := '0';
 	signal kb_buttons					: std_logic_vector(1 downto 0) := (others => '0');
 
 	-- Mouse
@@ -565,12 +549,6 @@ architecture rtl of karabas_minig is
 	-- Joystick
 	signal joy_l 						: std_logic_vector(12 downto 0);
 	signal joy_r 						: std_logic_vector(12 downto 0);	
-
-	-- OSD overlay
-	signal osd_command 				: std_logic_vector(15 downto 0);
-
-	-- SOFT switches command
-	signal softsw_command			: std_logic_vector(15 downto 0);
 
 	-- raw hid data
 	signal hid_kb_status 			: std_logic_vector(7 downto 0);
@@ -588,12 +566,16 @@ architecture rtl of karabas_minig is
 	signal ms_present 				: std_logic := '0';
 	
 	-- rtc
+	signal mcu_rtc_a				: std_logic_vector(7 downto 0);
+	signal mcu_rtc_wr_n			: std_logic;
 	signal rtc_a 						: std_logic_vector(7 downto 0);
 	signal rtc_di 						: std_logic_vector(7 downto 0);
 	signal rtc_do 						: std_logic_vector(7 downto 0);
 	signal rtc_wr						: std_logic;
 
 	-- mcu related
+	signal mcu_sck_ibufg				: std_logic;
+	signal mcu_sck_bufg				: std_logic;
 	signal mcu_busy 					: std_logic := '0';
 	signal areset 						: std_logic := '0';
 	
@@ -864,10 +846,19 @@ begin
    
    -- system clocks
 
-   BUFG_CLK50 : BUFG
+   -- karabas: CLK_50MHZ reaches the PLL through its IBUFG on the dedicated route; the BUFG between them made
+   -- the old ucf turn the dedicated route off
+   IBUFG_CLK50 : IBUFG
    port map
    (
       I => CLK_50MHZ,
+      O => CLK_50_ibufg
+   );
+
+   BUFG_CLK50 : BUFG
+   port map
+   (
+      I => CLK_50_ibufg,
       O => CLK_50
    );
 
@@ -888,9 +879,10 @@ begin
           
          -- clk
 
-         CLKIN      => CLK_50,
+         CLKIN      => CLK_50_ibufg,
           
          CLK0OUT    => CLK_28,             -- 28 MHz
+         CLK0PLL    => CLK_28_pll,         -- 28 MHz, the PLL output (karabas: for the BUFGMUX of CLK_CPU)
          CLK1OUT    => CLK_28_n,           -- 28 Mhz inverted
          CLK2OUT    => CLK_14,             -- 14 MHz
          CLK3OUT    => CLK_7,              --  7 MHz
@@ -916,9 +908,10 @@ begin
           
          -- clk
 
-         CLKIN      => CLK_50,
+         CLKIN      => CLK_50_ibufg,
           
          CLK0OUT    => CLK_28,             -- 28 MHz
+         CLK0PLL    => CLK_28_pll,         -- 28 MHz, the PLL output (karabas: for the BUFGMUX of CLK_CPU)
          CLK1OUT    => CLK_28_n,           -- 28 Mhz inverted
          CLK2OUT    => CLK_14,             -- 14 MHz
          CLK3OUT    => CLK_7,              --  7 MHz
@@ -1101,7 +1094,7 @@ begin
       port map
       (
          I0 => cpu_clk_s,
-         I1 => CLK_28,
+         I1 => CLK_28_pll,   -- karabas: the PLL output, not the BUFG of CLK_28
          S => zxn_cpu_speed_eff_28,
          O => CLK_CPU
       );
@@ -1533,77 +1526,39 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
          i_VLAST          => std_logic_vector(hdmi_max_vc)
       );
 		
-		dvi: entity work.dvi
-		port map(
-			CLK			=> CLK_HDMI,
-			RESET			=> not clk_hdmi_valid,
-			RGB			=> toHDMI_rgb(8 downto 6) & toHDMI_rgb(8 downto 6) & toHDMI_rgb(8 downto 7) & toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 4) & toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 1),
-			HSYNC			=> toHDMI_hsync,
-			VSYNC			=> toHDMI_vsync,
-			DE				=> not toHDMI_blank,
-			ENC_RED		=> dvi_r,
-			ENC_GREEN	=> dvi_g,
-			ENC_BLUE		=> dvi_b
-		);
-
-      hdmi: entity work.hdmi
+      -- karabas: zhdmi (hdmi_tx of karabas-go-modules) in place of the hdmi encoder of the ZX Next,
+      -- DVI when the HDMI audio is off (nextreg 08) or the mcu set DVI_ONLY, see rtl/hdmi/hdmi_out.v
+      hdmi: entity work.hdmi_out
       generic map
       (
-         FREQ           => 27000000,   -- pixel clock frequency
-         FS             => 48000,      -- audio sample rate - should be 32000, 41000 or 48000 = 48KHz
-         CTS            => 27000,      -- CTS = Freq(pixclk) * N / (128 * Fs)
-         N              => 6144        -- N = 128 * Fs /1000,  128 * Fs /1500 <= N <= 128 * Fs /300 (Check HDMI spec 7.2 for details)
+         SAMPLERATE     => 48000,
+         CLKRATE        => 28000000
       )
       port map
       (
-         I_CLK_PIXEL    => CLK_HDMI,
-         I_R            => toHDMI_rgb(8 downto 6) & toHDMI_rgb(8 downto 6) & toHDMI_rgb(8 downto 7),
-         I_G            => toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 4),
-         I_B            => toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 1),
-         I_BLANK        => toHDMI_blank,
-         I_HSYNC        => toHDMI_hsync,
-         I_VSYNC        => toHDMI_vsync,
-         I_576P_N       => zxn_video_50_60,
-      
-         -- PCM audio
-      
-         I_AUDIO_ENABLE => zxn_hdmi_audio,
-         I_AUDIO_PCM_L  => zxn_audio_L,
-         I_AUDIO_PCM_R  => zxn_audio_R,
-      
-         -- TMDS parallel pixel synchronous outputs (serialize LSB first)
-      
-         O_RED          => tdms_r,
-         O_GREEN        => tdms_g,
-         O_BLUE         => tdms_b
+         clk_28         => CLK_28,
+         audio_l        => zxn_audio_L,
+         audio_r        => zxn_audio_R,
+         audio_on       => zxn_hdmi_audio,
+         dvi_only       => dvi_only,
+
+         clk_pix        => CLK_HDMI,
+         clk_x5         => CLK_HDMIx5,
+         clk_x5_n       => CLK_HDMIx5_n,
+         pix_valid      => clk_hdmi_valid,
+
+         rgb            => toHDMI_rgb,
+         hsync_n        => toHDMI_hsync,
+         vsync_n        => toHDMI_vsync,
+         blank          => toHDMI_blank,
+
+         tmds_p         => TMDS_P,
+         tmds_n         => TMDS_N
       );
 
    end generate;
 
-   gen_hdmi_0: if (g_video_inc(1) = '0') generate
-   
-      tdms_r <= (others => '0');
-      tdms_g <= (others => '0');
-      tdms_b <= (others => '0');
-   
-   end generate;
-
-	tmds_r_mux <= dvi_r when dvi_only = '1' else tdms_r;
-	tmds_g_mux <= dvi_g when dvi_only = '1' else tdms_g;
-	tmds_b_mux <= dvi_b when dvi_only = '1' else tdms_b;	
-
-   hdmio: entity work.hdmi_out_xilinx_s6
-   port map (
-      clock_pixel_i     => CLK_HDMI,
-      clock_tdms_i      => CLK_HDMIx5,
-      clock_tdms_n_i    => CLK_HDMIx5_n,
-      red_i             => tmds_r_mux,
-      green_i           => tmds_g_mux,
-      blue_i            => tmds_b_mux,
-      tmds_out_p        => TMDS_P,
-      tmds_out_n        => TMDS_N
-   );
-   
+   -- (g_video_inc(1) = '0' is not built: TMDS_P / TMDS_N would not be driven)   
    ------------------------------------------------------------
    -- SERIAL COMMUNICATION ------------------------------------
    ------------------------------------------------------------
@@ -1770,7 +1725,9 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
    
    -- input
 
-   zxn_pi_gpio_i <= accel_i_q;
+   -- karabas: no Pi on the board, its GPIO pins read 1. accel_io was an internal tristate read
+   -- back, and GPIO 18 made the clock of the i2s slave of zxnext (pi_si2s_sck) from logic.
+   zxn_pi_gpio_i <= (others => '1');
    
    -- output
    
@@ -2068,23 +2025,57 @@ zxn_buttons <= (kb_buttons(1) or fn_keys(10)) & (kb_buttons(0) or fn_keys(9));
 
 ----------- Karabas units ----------------
 
--- MCU
-U_MCU: entity work.mcu
+-- MCU_SCK: IBUFG + BUFG, a clock on the global routing (on local routing PAR could not meet hold, tsconf)
+U_MCU_SCK_IBUFG: IBUFG
+port map (
+	I => MCU_SCK,
+	O => mcu_sck_ibufg
+);
+
+U_MCU_SCK_BUFG: BUFG
+port map (
+	I => mcu_sck_ibufg,
+	O => mcu_sck_bufg
+);
+
+-- MCU (karabas-go-modules kg_mcu: the link fixes of nanomig, a chip select filter of 3 clocks; the rtc
+-- registers as mcu.vhd of this core sent them, all to the mcu; no burst, ft, sd2: the core loads no rom)
+U_MCU: entity work.kg_mcu
+generic map(
+	BURST_MAX_MHZ		=> 0,
+	CS_FILTER			=> 3,
+	ENABLE_RTC			=> 1,
+	RTC_SKIP_0D			=> 0,
+	RTC_SEND_LIMIT		=> 256,
+	ENABLE_UART			=> 0,
+	ENABLE_MATRIX		=> 1,
+	ENABLE_DEBUG		=> 0,
+	ENABLE_IMG			=> 0,
+	ENABLE_FILE			=> 0,
+	ENABLE_FT			=> 0,
+	ENABLE_SD2			=> 0,
+	ENABLE_ESP			=> 0,
+	ENABLE_FLASHBOOT	=> 1
+)
 port map(
 	CLK => clk_28,
 	N_RESET => not areset,
-	
+
 	MCU_MOSI => MCU_MOSI,
 	MCU_MISO => MCU_MISO,
-	MCU_SCK => MCU_SCK,
+	MCU_SCK => mcu_sck_bufg,
 	MCU_SS => MCU_CS_N,
-	
+	MCU_SPI_FT_SS => '1',
+	MCU_SPI_SD2_SS => '1',
+	MCU_BURST_CS_N => '1',
+	MCU_BURST_READY => open,
+
 	MS_X => hid_ms_x,
 	MS_Y => hid_ms_y,
 	MS_Z => hid_ms_z,
 	MS_B => hid_ms_b,
 	MS_UPD => hid_ms_upd,
-	
+
 	KB_STATUS => hid_kb_status,
 	KB_DAT0 => hid_kb_dat0,
 	KB_DAT1 => hid_kb_dat1,
@@ -2092,38 +2083,51 @@ port map(
 	KB_DAT3 => hid_kb_dat3,
 	KB_DAT4 => hid_kb_dat4,
 	KB_DAT5 => hid_kb_dat5,
-	
+
 	JOY_L => joy_l,
 	JOY_R => joy_r,
-	
+
 	BTNS => kb_buttons,
-	
-	RTC_A =>  "00" & rtc_a(5 downto 0),
+
+	RTC_A => mcu_rtc_a,
 	RTC_DI => rtc_di,
 	RTC_DO => rtc_do,
 	RTC_CS => '1',
-	RTC_WR_N => not rtc_wr,
-	
+	RTC_WR_N => mcu_rtc_wr_n,
+
+	UART_TX_DATA => x"00",
+	UART_TX_WR => '0',
+	UART_TX_MODE => '0',
+	UART_DLM => x"00",
+	UART_DLL => x"00",
+	UART_DLM_WR => '0',
+	UART_DLL_WR => '0',
+
+	FT_MISO => '1',
+	SD2_MISO => '1',
+
+	MATRIX_CMD => matrix_cmd,
+	MATRIX_CMD_WR => matrix_cmd_wr,
+	DEBUG_ADDR => x"0000",
+	DEBUG_DATA => x"0000",
+
+	IMG_Q_WR => '0',
+	IMG_Q_DI => x"000000",
+
+	ESP_UART_RX_DATA => x"00",
+	ESP_UART_RX_WR => '0',
+
 	FLASHBOOT_START => flashboot_start,
 	FLASHBOOT_COREID => flashboot_coreid,
-	
-	ROMLOADER_ACTIVE => open,
-	ROMLOAD_ADDR => open,
-	ROMLOAD_DATA => open,
-	ROMLOAD_WR => open,
 
-    MATRIX_CMD_WR => matrix_cmd_wr,
-    MATRIX_CMD => matrix_cmd,
-	
-	HWID	=> hwid,
-	DVI_ONLY	=> dvi_only,
-	
-	SOFTSW_COMMAND => softsw_command,	
-	OSD_COMMAND => osd_command,
+	HWID => hwid,
+	DVI_ONLY => dvi_only,
 	
 	BUSY => mcu_busy
-	
 );
+
+mcu_rtc_a <= "00" & rtc_a(5 downto 0);
+mcu_rtc_wr_n <= not rtc_wr;
 
 U_RTC: entity work.ds1307
 port map (
@@ -2187,44 +2191,32 @@ port map (
 zxn_joy_left <=  joy_l(12) & joy_l(9) & joy_l(11) & joy_l(10) & joy_l(5) & joy_l(6) & joy_l(8) & joy_l(7) & joy_l(1) & joy_l(2) & joy_l(3) & joy_l(4);
 zxn_joy_right <= joy_r(12) & joy_r(9) & joy_r(11) & joy_r(10) & joy_r(5) & joy_r(6) & joy_r(8) & joy_r(7) & joy_r(1) & joy_r(2) & joy_r(3) & joy_r(4);
 
-U_SW: entity work.soft_switches
-port map (
-	CLK => clk_28,
-	
-	SOFTSW_COMMAND => softsw_command,
+-- Translate mouse events to absolute coordinates (kg_cursor: the cursor.vhd of this core, an 8-bit
+-- wheel position from the zero-extended deltas)
 
-    HARD_RESET => kb_hard_reset, -- F1
-    SCANDOUBLER => kb_scandoubler, -- F2
-    VGA_60HZ => kb_60hz, -- F3
-    SOFT_RESET => kb_soft_reset, -- F4
-    SCANLINE => kb_scanline, -- F7
-    CPU_SPEED => kb_cpu_speed, -- F8
-    MULTIFACE => kb_multiface, -- F9
-    DIVMMC => kb_divmmc -- F10
-);
-
--- Translate mouse events to absolute coordinates
-
-U_MS: entity work.cursor
+U_MS: entity work.kg_cursor
+generic map(
+	Z_W => 8,
+	Z_NEG => 0,
+	Z_ACC => 1,
+	Z_SEXT => 0
+)
 port map(
-	CLK => CLK_28,
-	RESET => areset,
-	
-	-- inputs from usb hid mouse
-	MS_X => hid_ms_x,
-	MS_Y => hid_ms_y,
-	MS_Z => hid_ms_z,
-	MS_B => hid_ms_b,
-	MS_UPD => hid_ms_upd,
-	
-	-- output absoulte coords
-	OUT_X => ms_x,
-	OUT_Y => ms_y,
-	OUT_Z => ms_z,
-	OUT_B => ms_b
-	
-);
+	clk => CLK_28,
 
+	-- inputs from usb hid mouse
+	ms_x => hid_ms_x,
+	ms_y => hid_ms_y,
+	ms_z => hid_ms_z,
+	ms_b => hid_ms_b,
+	ms_upd => hid_ms_upd,
+
+	-- output absoulte coords
+	x => ms_x,
+	y => ms_y,
+	z => ms_z,
+	b => ms_b
+);
 ms_present <= '1';
 
 zxn_mouse_x <= ms_x;
@@ -2292,12 +2284,13 @@ port map(
 );
 
 -- DAC
-u_dac : entity work.PCM5102
+u_dac : entity work.kg_pcm5102
 generic map(
-	DAC_CLK_DIV_BITS => 2
+	DIV_BITS => 2
 )
 port map(
 	clk => CLK_28,
+	reset => '0',
 	left => zxn_audio_L,
 	right => zxn_audio_R,
 	bck => DAC_BCK,
