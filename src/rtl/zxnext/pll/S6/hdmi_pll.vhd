@@ -88,6 +88,9 @@ architecture rtl of hdmi_pll is
    signal clk1_direct          : std_logic;
    signal clk1_direct_g        : std_logic;
    signal dcm2_res_s           : std_logic_vector(1 downto 0) := (others => '1');
+   signal dcm2_res_r           : std_logic := '1';
+   signal count_clr            : std_logic := '1';
+   signal count_309            : std_logic := '0';
    signal dcm1_locked          : std_logic;
    signal dcm1_progen          : std_logic;
    signal dcm1_progdone        : std_logic;
@@ -287,15 +290,42 @@ begin
    -- karabas: the divider on the BUFG of CLKFX (up to 309 MHz, 3.2 ns; the ZX Next clocked it from the local routing
    -- of the CLKFX net). The compares are registered one clock ahead (count_155 / count_311 are high in the clocks
    -- of 155 / 311 as before: the counter steps every clock), and dcm2_res, of the DRP logic on CLK_50, resets it
-   -- through two flip-flops of this clock instead of asynchronously; it stays high for all of S_0 and S_P1, while
-   -- DCM_1 is programmed and runs.
+   -- through a flip-flop of CLK_50 and two of this clock instead of asynchronously; it stays high for all of S_0
+   -- and S_P1, while DCM_1 is programmed and runs.
    bufg_clk1 : BUFG
    port map (I => clk1_direct, O => clk1_direct_g);
+
+   process (CLKDRP)
+   begin
+      if rising_edge(CLKDRP) then
+         dcm2_res_r <= dcm2_res;   -- a flip-flop before the crossing (dcm2_res is decoded from the state)
+      end if;
+   end process;
 
    process (clk1_direct_g)
    begin
       if rising_edge(clk1_direct_g) then
-         dcm2_res_s <= dcm2_res_s(0) & dcm2_res;
+         dcm2_res_s <= dcm2_res_s(0) & dcm2_res_r;
+      end if;
+   end process;
+
+   -- count_309 is high in the clock of 309, so count_311 and count_clr (high in the clocks the counter goes to 0:
+   -- those of count_311 and of the reset) are flip-flops of one gate each, and count_clr drives the synchronous reset
+   -- of the counter without logic in front of it (a compare of 9 bits and the reset in one clock missed 3.2 ns)
+   process (clk1_direct_g)
+   begin
+      if rising_edge(clk1_direct_g) then
+         if count = "100110100" then
+            count_309 <= '1';
+         else
+            count_309 <= '0';
+         end if;
+         count_clr <= count_309 or dcm2_res_s(0);
+         if count_clr = '1' then
+            count <= (others => '0');
+         else
+            count <= count + 1;
+         end if;
       end if;
    end process;
 
@@ -303,7 +333,6 @@ begin
    begin
       if rising_edge(clk1_direct_g) then
          if dcm2_res_s(1) = '1' then
-            count <= (others => '0');
             count_155 <= '0';
             count_311 <= '0';
             clk1_divide <= '0';
@@ -313,16 +342,7 @@ begin
             else
                count_155 <= '0';
             end if;
-            if count = "100110101" then
-               count_311 <= '1';
-            else
-               count_311 <= '0';
-            end if;
-            if count_311 = '1' then
-               count <= (others => '0');
-            else
-               count <= count + 1;
-            end if;
+            count_311 <= count_309;
             if count_155 = '1' then
                clk1_divide <= '1';
             elsif count_311 = '1' then

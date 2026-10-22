@@ -940,7 +940,10 @@ begin
 
    -- cpu clock selection
 
-   gen_clkbuf_1: if (g_video_inc(0) = '1') generate
+   -- karabas: the Go builds the cpu clock of the HDMI boards too (gen_clkbuf_0, one BUFGMUX of the PLL output of
+   -- CLK_28 and cpu_clk_s): this one, a cascade of BUFGMUXes after the BUFGs of CLK_7 / CLK_14 / CLK_28, made the cpu
+   -- clock 2 ns later than CLK_28 and the falling cpu clock of 14 MHz (CLK_14) came with a rising CLK_28 (hold)
+   gen_clkbuf_1: if (false) generate
 
       -- sufficient clock buffers in LX16 without HDMI
 
@@ -984,7 +987,7 @@ begin
 
    end generate;
 
-   gen_clkbuf_0: if (g_video_inc(0) = '0') generate
+   gen_clkbuf_0: if (true) generate
 
       -- insufficient clock buffers in LX16 with HDMI
 

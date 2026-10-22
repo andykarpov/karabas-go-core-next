@@ -2328,8 +2328,8 @@ port map(
 	r_data_rx => adc_r
 );
 
-audio_mix_l <= zxn_audio_L;
-audio_mix_r <= zxn_audio_R;
+audio_mix_l <= zxn_audio_L(15) & zxn_audio_L; -- karabas: 17 bits, the 16-bit sample sign-extended (did not compile)
+audio_mix_r <= zxn_audio_R(15) & zxn_audio_R;
 
 -- ADC_CLK output buf
 ODDR2_ADC: ODDR2

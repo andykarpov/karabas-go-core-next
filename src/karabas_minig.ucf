@@ -224,7 +224,7 @@ NET "FLASH_HOLD_N"     LOC="P12"    | IOSTANDARD = LVCMOS33; # CONF_IO3
 
 # ------------------------------------------------------------------------------------------------------------
 # Timing constraints. This block is the same in karabas_go.ucf, karabas_mini.ucf and karabas_minig.ucf but for the
-# HDMI part (Mini, Mini G).
+# parts of the boards after it.
 #
 # Clocks (rtl/karabas_*_top.vhd, rtl/zxnext/pll/S6):
 #   CLK_50MHZ -> IBUFG -> system_pll (PLL_ADV, reprogrammed through DRP for the VGA modes) and BUFG CLK_50 (the
@@ -254,19 +254,19 @@ NET "CLK_14" TNM_NET = "TG_CLK_14";
 NET "CLK_7" TNM_NET = "TG_CLK_7";
 NET "CLK_28x5_n" TNM_NET = "TG_CLK_28X5";
 TIMEGRP "TG_CORE" = "TG_CLK_28" "TG_CLK_28_N" "TG_CLK_14" "TG_CLK_7" "TG_CLK_28X5";
-# the flip-flops on the cpu clock (also in TG_CLK_28 through the BUFGMUX), for the analysis of -modes; cpu_clk_s,
-# the flip-flop that makes the 3.5 / 7 / 14 MHz cpu clock, has a short route to the BUFGMUX (-modes takes the cpu
-# clock edge up to 3 ns after CLK_28 for it: 0.5 ns clock to output, 2 ns route, the BUFGMUX as for I1)
+# the flip-flops on the cpu clock (also in the group of CLK_28 through the BUFGMUX), for the analysis of -modes
 NET "CLK_CPU" TNM_NET = "TG_CLK_CPU";
-NET "cpu_clk_s" MAXDELAY = 2 ns;
+# The cpu clock: CLK_CPU is the BUFGMUX of the PLL output of CLK_28 (28 MHz) and cpu_clk_s, a flip-flop on CLK_28
+# (3.5 / 7 / 14 MHz); `make <board>-modes` analyses the CPU flip-flops on it at 14 MHz with the edges of CLK_28
+# (`cpu`). Its clock is 2.5 to 5.2 ns later (0.5 ns clock to output, this route, against the route of I1), which
+# trce cannot model:
+# hundreds of paths CLK_28 -> CPU flip-flops (the reads of ports FE, FFFD, FFDF, the floating bus, SD MISO; most on
+# the falling cpu clock, which comes with a rising CLK_28 at 14 MHz) have only 0.25 to 1.4 ns of hold slack there.
+NET "cpu_clk_s" MAXDELAY = 2.5 ns;
 # What -modes leaves open (the clock design of the ZX Next, not changed here):
-# - 3.5 / 7 / 14 MHz: the clock of cpu_clk_s is 2.5 to 4.7 ns later than CLK_28 (the 28 MHz mode, I1, is not);
-#   hundreds of paths CLK_28 -> CPU flip-flops (the reads of ports FE, FFFD, FFDF, the floating bus, SD MISO; most
-#   on the falling cpu clock, which comes with a rising CLK_28 at 14 MHz) have 0.25 to 1.4 ns of hold slack in the
-#   `cpu` run without that delay: in these modes such a flip-flop can take the value of the next CLK_28 cycle.
-# - VGA-1 (28.57 MHz): CLK_28x5_n is 4.67 x CLK_28 (no PLL setting gives 5x there): sram_oe_n_active -> the write
-#   pulse counter sram_we_line has 1.25 ns on one edge of three (-1.04 ns); a few paths of the faster HDMI clocks
-#   miss by up to 0.1 ns.
+# - VGA-1 and VGA-2 (28.57 / 29.46 MHz): CLK_28x5_n is 4.67 x CLK_28 (no PLL setting gives 5x there):
+#   sram_oe_n_active -> the write pulse counter sram_we_line has 1.25 ns on one edge of three (about -1 ns); on the
+#   Mini / Mini G a few paths of the faster HDMI clocks miss by up to 0.1 ns.
 
 # MCU link (kg_mcu): SPI mode 0 from the RP2040 at 16 MHz (no bursts in this core). MCU_SCK is not related to
 # CLK_50MHZ: kg_mcu crosses with toggle synchronisers and holds the data for a byte (or from the request to the

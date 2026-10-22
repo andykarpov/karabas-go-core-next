@@ -30,10 +30,12 @@ JSON_go = core.json
 JSON_mini = core_mini.json
 JSON_minig = core_minig.json
 
-# map / par options (those of tsconf, the same for the three boards but the cost table)
-MAP_T_go = 1
-MAP_T_mini = 1
-MAP_T_minig = 1
+# map / par options (those of tsconf). The map cost table (-t, the placement seed) is per board, 2 by default (the
+# one that works on these cores): on the Go, 1 left the router of the build of 2026-10-22 running for 47 minutes,
+# 2 routed it in 4 minutes with all constraints met. When a build misses a constraint by a placement, try another.
+MAP_T_go = 2
+MAP_T_mini = 2
+MAP_T_minig = 2
 MAP_OPT = -logic_opt off -ol high -xe n -xt 0 -register_duplication off -r 4 -global_opt off -mt 2 -detail -ir off -pr b -lc off -power off
 PAR_OPT = -ol high -xe n -mt 4
 
@@ -46,7 +48,7 @@ PAR_OPT = -ol high -xe n -mt 4
 PLLV_go = rtl/zxnext/pll/S6/system_pll.v
 PLLV_mini = rtl/zxnext/pll/S6/system_pll_reduced.v
 PLLV_minig = rtl/zxnext/pll/S6/system_pll_reduced.v
-MODES_go = vga1 vga2 vga3 vga4 vga5 vga6
+MODES_go = vga1 vga2 vga3 vga4 vga5 vga6 cpu
 MODES_mini = vga1 cpu
 MODES_minig = vga1 cpu
 
