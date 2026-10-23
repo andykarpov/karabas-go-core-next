@@ -156,6 +156,7 @@ architecture rtl of karabas_go is
       CLKIN       : in std_logic;
       
       CLK0OUT     : out std_logic;
+      CLK0PLL     : out std_logic;
       CLK1OUT     : out std_logic;
       CLK2OUT     : out std_logic;
       CLK3OUT     : out std_logic;
@@ -174,6 +175,7 @@ architecture rtl of karabas_go is
       CLKIN       : in std_logic;
       
       CLK0OUT     : out std_logic;
+      CLK0PLL     : out std_logic;
       CLK1OUT     : out std_logic;
       CLK2OUT     : out std_logic;
       CLK3OUT     : out std_logic;
@@ -268,9 +270,11 @@ architecture rtl of karabas_go is
    -- clocks
    
    signal CLK_50                 : std_logic;
+   signal CLK_50_ibufg           : std_logic;
    signal clk_28_rdy_n           : std_logic;
    
    signal CLK_28                 : std_logic;
+   signal CLK_28_pll             : std_logic;
    signal CLK_28_n               : std_logic;
    signal CLK_14                 : std_logic;
    signal CLK_7                  : std_logic;
@@ -516,14 +520,6 @@ architecture rtl of karabas_go is
 	-- karabas signals --
 
 	-- Triggers
-	signal kb_hard_reset 			: std_logic := '0';
-	signal kb_scandoubler 			: std_logic := '0';
-	signal kb_60hz 					: std_logic := '0';
-	signal kb_soft_reset 			: std_logic := '0';
-	signal kb_scanline 				: std_logic := '0';
-	signal kb_cpu_speed 				: std_logic := '0';
-	signal kb_multiface 				: std_logic := '0';
-	signal kb_divmmc 					: std_logic := '0';
 	signal kb_buttons					: std_logic_vector(1 downto 0) := (others => '0');
 	signal fn_keys						: std_logic_vector(12 downto 1);
 
@@ -536,12 +532,6 @@ architecture rtl of karabas_go is
 	-- Joystick
 	signal joy_l 						: std_logic_vector(12 downto 0);
 	signal joy_r 						: std_logic_vector(12 downto 0);	
-
-	-- OSD overlay
-	signal osd_command 				: std_logic_vector(15 downto 0);
-
-	-- SOFT switches command
-	signal softsw_command			: std_logic_vector(15 downto 0);
 
 	-- raw hid data
 	signal hid_kb_status 			: std_logic_vector(7 downto 0);
@@ -559,6 +549,8 @@ architecture rtl of karabas_go is
 	signal ms_present 				: std_logic := '0';
 	
 	-- rtc
+	signal mcu_rtc_a				: std_logic_vector(7 downto 0);
+	signal mcu_rtc_wr_n			: std_logic;
 	signal rtc_a 						: std_logic_vector(7 downto 0);
 	signal rtc_di 						: std_logic_vector(7 downto 0);
 	signal rtc_do 						: std_logic_vector(7 downto 0);
@@ -570,6 +562,7 @@ architecture rtl of karabas_go is
 	
 	-- midi clk
 	signal clk_12 						: std_logic := '0';
+	signal clk_12_n 					: std_logic := '1';
 
 begin
 
@@ -824,10 +817,19 @@ begin
    
    -- system clocks
 
-   BUFG_CLK50 : BUFG
+   -- karabas: CLK_50MHZ reaches the PLL through its IBUFG on the dedicated route; the BUFG between them made
+   -- the old ucf turn the dedicated route off
+   IBUFG_CLK50 : IBUFG
    port map
    (
       I => CLK_50MHZ,
+      O => CLK_50_ibufg
+   );
+
+   BUFG_CLK50 : BUFG
+   port map
+   (
+      I => CLK_50_ibufg,
       O => CLK_50
    );
 
@@ -848,9 +850,10 @@ begin
           
          -- clk
 
-         CLKIN      => CLK_50,
+         CLKIN      => CLK_50_ibufg,
           
          CLK0OUT    => CLK_28,             -- 28 MHz
+         CLK0PLL    => CLK_28_pll,         -- 28 MHz, the PLL output (karabas: for the BUFGMUX of CLK_CPU)
          CLK1OUT    => CLK_28_n,           -- 28 Mhz inverted
          CLK2OUT    => CLK_14,             -- 14 MHz
          CLK3OUT    => CLK_7,              --  7 MHz
@@ -876,9 +879,10 @@ begin
           
          -- clk
 
-         CLKIN      => CLK_50,
+         CLKIN      => CLK_50_ibufg,
           
          CLK0OUT    => CLK_28,             -- 28 MHz
+         CLK0PLL    => CLK_28_pll,         -- 28 MHz, the PLL output (karabas: for the BUFGMUX of CLK_CPU)
          CLK1OUT    => CLK_28_n,           -- 28 Mhz inverted
          CLK2OUT    => CLK_14,             -- 14 MHz
          CLK3OUT    => CLK_7,              --  7 MHz
@@ -936,7 +940,10 @@ begin
 
    -- cpu clock selection
 
-   gen_clkbuf_1: if (g_video_inc(0) = '1') generate
+   -- karabas: the Go builds the cpu clock of the HDMI boards too (gen_clkbuf_0, one BUFGMUX of the PLL output of
+   -- CLK_28 and cpu_clk_s): this one, a cascade of BUFGMUXes after the BUFGs of CLK_7 / CLK_14 / CLK_28, made the cpu
+   -- clock 2 ns later than CLK_28 and the falling cpu clock of 14 MHz (CLK_14) came with a rising CLK_28 (hold)
+   gen_clkbuf_1: if (false) generate
 
       -- sufficient clock buffers in LX16 without HDMI
 
@@ -980,7 +987,7 @@ begin
 
    end generate;
 
-   gen_clkbuf_0: if (g_video_inc(0) = '0') generate
+   gen_clkbuf_0: if (true) generate
 
       -- insufficient clock buffers in LX16 with HDMI
 
@@ -1061,7 +1068,7 @@ begin
       port map
       (
          I0 => cpu_clk_s,
-         I1 => CLK_28,
+         I1 => CLK_28_pll,   -- karabas: the PLL output, not the BUFG of CLK_28
          S => zxn_cpu_speed_eff_28,
          O => CLK_CPU
       );
@@ -1409,18 +1416,7 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
 
    end generate;
 
-   hdmio: entity work.hdmi_out_xilinx_s6
-   port map (
-      clock_pixel_i     => CLK_HDMI,
-      clock_tdms_i      => CLK_HDMIx5,
-      clock_tdms_n_i    => CLK_HDMIx5_n,
-      red_i             => (others => '0'),
-      green_i           => (others => '0'),
-      blue_i            => (others => '0'),
-      tmds_out_p        => open,
-      tmds_out_n        => open
-   );
-   
+   -- karabas: the hdmi output of the ZX Next is not built on the Go (no HDMI connector)   
    ------------------------------------------------------------
    -- SERIAL COMMUNICATION ------------------------------------
    ------------------------------------------------------------
@@ -1587,7 +1583,9 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
    
    -- input
 
-   zxn_pi_gpio_i <= accel_i_q;
+   -- karabas: no Pi on the board, its GPIO pins read 1. accel_io was an internal tristate read
+   -- back, and GPIO 18 made the clock of the i2s slave of zxnext (pi_si2s_sck) from logic.
+   zxn_pi_gpio_i <= (others => '1');
    
    -- output
    
@@ -1884,23 +1882,44 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
 
 ----------- Karabas units ----------------
 
--- MCU
-U_MCU: entity work.mcu
+-- MCU (karabas-go-modules kg_mcu: the link fixes of nanomig, a chip select filter of 3 clocks; the rtc
+-- registers as mcu.vhd of this core sent them, all to the mcu; no burst, ft, sd2: the core loads no rom)
+U_MCU: entity work.kg_mcu
+generic map(
+	BURST_MAX_MHZ		=> 0,
+	CS_FILTER			=> 3,
+	ENABLE_RTC			=> 1,
+	RTC_SKIP_0D			=> 0,
+	RTC_SEND_LIMIT		=> 256,
+	ENABLE_UART			=> 0,
+	ENABLE_MATRIX		=> 0,
+	ENABLE_DEBUG		=> 0,
+	ENABLE_IMG			=> 0,
+	ENABLE_FILE			=> 0,
+	ENABLE_FT			=> 0,
+	ENABLE_SD2			=> 0,
+	ENABLE_ESP			=> 0,
+	ENABLE_FLASHBOOT	=> 1
+)
 port map(
 	CLK => clk_28,
 	N_RESET => not areset,
-	
+
 	MCU_MOSI => MCU_MOSI,
 	MCU_MISO => MCU_MISO,
 	MCU_SCK => MCU_SCK,
 	MCU_SS => MCU_CS_N,
-	
+	MCU_SPI_FT_SS => '1',
+	MCU_SPI_SD2_SS => '1',
+	MCU_BURST_CS_N => '1',
+	MCU_BURST_READY => open,
+
 	MS_X => hid_ms_x,
 	MS_Y => hid_ms_y,
 	MS_Z => hid_ms_z,
 	MS_B => hid_ms_b,
 	MS_UPD => hid_ms_upd,
-	
+
 	KB_STATUS => hid_kb_status,
 	KB_DAT0 => hid_kb_dat0,
 	KB_DAT1 => hid_kb_dat1,
@@ -1908,32 +1927,51 @@ port map(
 	KB_DAT3 => hid_kb_dat3,
 	KB_DAT4 => hid_kb_dat4,
 	KB_DAT5 => hid_kb_dat5,
-	
+
 	JOY_L => joy_l,
 	JOY_R => joy_r,
-	
+
 	BTNS => kb_buttons,
-	
-	RTC_A =>  "00" & rtc_a(5 downto 0),
+
+	RTC_A => mcu_rtc_a,
 	RTC_DI => rtc_di,
 	RTC_DO => rtc_do,
 	RTC_CS => '1',
-	RTC_WR_N => not rtc_wr,
-	
+	RTC_WR_N => mcu_rtc_wr_n,
+
+	UART_TX_DATA => x"00",
+	UART_TX_WR => '0',
+	UART_TX_MODE => '0',
+	UART_DLM => x"00",
+	UART_DLL => x"00",
+	UART_DLM_WR => '0',
+	UART_DLL_WR => '0',
+
+	FT_MISO => '1',
+	SD2_MISO => '1',
+
+	MATRIX_CMD => x"000000",
+	MATRIX_CMD_WR => '0',
+	DEBUG_ADDR => x"0000",
+	DEBUG_DATA => x"0000",
+
+	IMG_Q_WR => '0',
+	IMG_Q_DI => x"000000",
+
+	ESP_UART_RX_DATA => x"00",
+	ESP_UART_RX_WR => '0',
+
 	FLASHBOOT_START => flashboot_start,
 	FLASHBOOT_COREID => flashboot_coreid,
-	
-	ROMLOADER_ACTIVE => open,
-	ROMLOAD_ADDR => open,
-	ROMLOAD_DATA => open,
-	ROMLOAD_WR => open,
-	
-	SOFTSW_COMMAND => softsw_command,	
-	OSD_COMMAND => osd_command,
+
+	HWID => open,
+	DVI_ONLY => open,
 	
 	BUSY => mcu_busy
-	
 );
+
+mcu_rtc_a <= "00" & rtc_a(5 downto 0);
+mcu_rtc_wr_n <= not rtc_wr;
 
 U_RTC: entity work.ds1307
 port map (
@@ -1997,44 +2035,32 @@ port map (
 zxn_joy_left <=  joy_l(12) & joy_l(9) & joy_l(11) & joy_l(10) & joy_l(5) & joy_l(6) & joy_l(8) & joy_l(7) & joy_l(1) & joy_l(2) & joy_l(3) & joy_l(4);
 zxn_joy_right <= joy_r(12) & joy_r(9) & joy_r(11) & joy_r(10) & joy_r(5) & joy_r(6) & joy_r(8) & joy_r(7) & joy_r(1) & joy_r(2) & joy_r(3) & joy_r(4);
 
-U_SW: entity work.soft_switches
-port map (
-	CLK => clk_28,
-	
-	SOFTSW_COMMAND => softsw_command,
+-- Translate mouse events to absolute coordinates (kg_cursor: the cursor.vhd of this core, an 8-bit
+-- wheel position from the zero-extended deltas)
 
-    HARD_RESET => kb_hard_reset, -- F1
-    SCANDOUBLER => kb_scandoubler, -- F2
-    VGA_60HZ => kb_60hz, -- F3
-    SOFT_RESET => kb_soft_reset, -- F4
-    SCANLINE => kb_scanline, -- F7
-    CPU_SPEED => kb_cpu_speed, -- F8
-    MULTIFACE => kb_multiface, -- F9
-    DIVMMC => kb_divmmc -- F10
-);
-
--- Translate mouse events to absolute coordinates
-
-U_MS: entity work.cursor
+U_MS: entity work.kg_cursor
+generic map(
+	Z_W => 8,
+	Z_NEG => 0,
+	Z_ACC => 1,
+	Z_SEXT => 0
+)
 port map(
-	CLK => CLK_28,
-	RESET => areset,
-	
-	-- inputs from usb hid mouse
-	MS_X => hid_ms_x,
-	MS_Y => hid_ms_y,
-	MS_Z => hid_ms_z,
-	MS_B => hid_ms_b,
-	MS_UPD => hid_ms_upd,
-	
-	-- output absoulte coords
-	OUT_X => ms_x,
-	OUT_Y => ms_y,
-	OUT_Z => ms_z,
-	OUT_B => ms_b
-	
-);
+	clk => CLK_28,
 
+	-- inputs from usb hid mouse
+	ms_x => hid_ms_x,
+	ms_y => hid_ms_y,
+	ms_z => hid_ms_z,
+	ms_b => hid_ms_b,
+	ms_upd => hid_ms_upd,
+
+	-- output absoulte coords
+	x => ms_x,
+	y => ms_y,
+	z => ms_z,
+	b => ms_b
+);
 ms_present <= '1';
 
 zxn_mouse_x <= ms_x;
@@ -2044,9 +2070,13 @@ zxn_mouse_button <= ms_b;
 
 -- Audio dac
 
-U_DAC: entity work.PCM5102
+U_DAC: entity work.kg_pcm5102
+generic map (
+	DIV_BITS => 1
+)
 port map (
 	clk => CLK_28,
+	reset => '0',
 	left => zxn_audio_L,
 	right => zxn_audio_R,
 	din => DAC_DAT,
@@ -2112,11 +2142,21 @@ FLASH_HOLD_N <= '1';
 -- midi reset
 MIDI_RESET_N <= not reset;
 
--- midi PLL
-u_pll_midi: entity work.pll_midi
+-- midi DCM: 28 MHz x 3 / 7 = 12 MHz (kg_dcm, the coregen pll_midi it replaces; follows CLK_28 in the
+-- VGA modes)
+u_pll_midi: entity work.kg_dcm
+generic map(
+	CLKIN_PERIOD => 35.714,
+	CLKFX_MULTIPLY => 3,
+	CLKFX_DIVIDE => 7
+)
 port map(
-	CLK_IN1 => CLK_28,
-	CLK_OUT1 => clk_12
+	clk_in => CLK_28,
+	rst => '0',
+	clk_fx => clk_12,
+	clk_fx180 => clk_12_n,
+	clk_0 => open,
+	locked => open
 );
 
 -- midi clock
@@ -2124,7 +2164,7 @@ u_midi_clk: ODDR2
 port map(
 	Q => MIDI_CLK,
 	C0 => clk_12,
-	C1 => not clk_12,
+	C1 => clk_12_n,
 	CE => '1',
 	D0 => '1',
 	D1 => '0',

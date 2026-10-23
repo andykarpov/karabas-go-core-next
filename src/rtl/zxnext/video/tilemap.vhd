@@ -80,18 +80,7 @@ end entity;
 
 architecture rtl of tilemap is
 
-   -- coregen
-   
-   component sdpram_16_9 is
-   port (
-      DPRA                    : IN  STD_LOGIC_VECTOR(4-1 downto 0) := (OTHERS => '0');
-      CLK                     : IN STD_LOGIC;
-      WE                      : IN  STD_LOGIC;
-      DPO                     : OUT STD_LOGIC_VECTOR(9-1 downto 0);
-      A                       : IN  STD_LOGIC_VECTOR(4-1-(4*0*boolean'pos(4>4)) downto 0) := (OTHERS => '0');
-      D                       : IN  STD_LOGIC_VECTOR(9-1 downto 0) := (OTHERS => '0')
-   );
-   end component;
+   -- karabas: the coregen core sdpram_16_9 is replaced by kg_dist_sdpram of karabas-go-modules
    
    --
 
@@ -198,14 +187,17 @@ begin
    -- TILEMAP PIXEL MEMORY
    -----------------------
    
-   tilemem : sdpram_16_9
+   -- karabas: kg_dist_sdpram in place of the coregen sdpram_16_9
+   tilemem : entity work.kg_dist_sdpram
+   generic map (DW => 9, AW => 4)
    port map (
-      DPRA  => video_addr,
-      CLK   => clock_master_i,
-      WE    => tm_tilemap_pixel_we,
-      DPO   => video_data,
-      A     => tm_tilemap_pixel_waddr,
-      D     => tm_tilemap_pixel_wdata
+      dpra  => video_addr,
+      clk   => clock_master_i,
+      we    => tm_tilemap_pixel_we,
+      dpo   => video_data,
+      spo   => open,
+      a     => tm_tilemap_pixel_waddr,
+      d     => tm_tilemap_pixel_wdata
    );
 
    -------------

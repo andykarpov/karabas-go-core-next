@@ -56,6 +56,7 @@ module system_pll
       input CLKIN,
       
       output CLK0OUT,       // 28 MHz
+      output CLK0PLL,       // karabas: CLK0OUT before its BUFG, for the BUFGMUX of the cpu clock
       output CLK1OUT,       // 28 Mhz inverted
       output CLK2OUT,       // 14 MHz
       output CLK3OUT,       //  7 MHz
@@ -101,6 +102,9 @@ module system_pll
       .O(CLK0OUT),
       .I(clk0_bufgin) 
    );
+   // karabas: the PLL output itself to the BUFGMUX of CLK_CPU (the dedicated route; from the BUFG it was a cascade
+   // of global buffers on the general routing, 2.8 ns later than CLK_28)
+   assign CLK0PLL = clk0_bufgin;
    
    BUFG BUFG_CLK1 (
       .O(CLK1OUT),

@@ -86,12 +86,17 @@ architecture rtl of hdmi_pll is
    signal progdata             : std_logic;
    
    signal clk1_direct          : std_logic;
+   signal clk1_direct_g        : std_logic;
+   signal dcm2_res_s           : std_logic_vector(1 downto 0) := (others => '1');
+   signal dcm2_res_r           : std_logic := '1';
+   signal count_clr            : std_logic := '1';
+   signal count_309            : std_logic := '0';
    signal dcm1_locked          : std_logic;
    signal dcm1_progen          : std_logic;
    signal dcm1_progdone        : std_logic;
    
-   signal count_155            : std_logic;
-   signal count_311            : std_logic;
+   signal count_155            : std_logic := '0';
+   signal count_311            : std_logic := '0';
    signal count                : std_logic_vector(8 downto 0) := (others => '0');
    signal clk1_divide          : std_logic := '0';
    
@@ -105,6 +110,9 @@ architecture rtl of hdmi_pll is
    signal pll3_fb              : std_logic;
    signal pll3_locked          : std_logic;
    signal clkhdmi              : std_logic;
+   signal clkhdmi_pll          : std_logic;
+   signal clkhdmi5_pll         : std_logic;
+   signal clkhdmi5n_pll        : std_logic;
    signal clkhdmi5             : std_logic;
    signal clkhdmi5n            : std_logic;
 
@@ -252,8 +260,11 @@ begin
    (
       CLKFX_MULTIPLY => 2,       -- Multiply value - M - (2-256)
       CLKFX_DIVIDE   => 10,      -- Divide value - D - (1-256)
-      CLKFX_MD_MAX   => 0.2,     -- Specify maximum M/D ratio for timing analysis
-      CLKIN_PERIOD   => 35.7     -- Input clock period specified in nS
+      -- karabas: for the analysis of the chain to PLL_3 (the ZX Next had 0.2): 0.24586 * 5.5 (dcm_2) = 1.3522 =
+      -- 75/52 * 15/16, the fastest frame (48K 50Hz, 27.04 MHz). The real M/D go up to 210/19 (128K 50Hz, 309 MHz
+      -- for the divider below): the ucf has its own PERIOD for the divider (TS_HDMI_DIV).
+      CLKFX_MD_MAX   => 0.24586, -- Specify maximum M/D ratio for timing analysis
+      CLKIN_PERIOD   => 35.714   -- Input clock period specified in nS
    )
    port map
    (
@@ -277,31 +288,67 @@ begin
 
    -- divide by 311
    
-   count_155 <= '1' when count = "010011011" else '0';
-   count_311 <= '1' when count = "100110110" else '0';
-   
-   process (clk1_direct, dcm2_res)
+   -- karabas: the divider on the BUFG of CLKFX (up to 309 MHz, 3.2 ns; the ZX Next clocked it from the local routing
+   -- of the CLKFX net). The compares are registered one clock ahead (count_155 / count_311 are high in the clocks
+   -- of 155 / 311 as before: the counter steps every clock), and dcm2_res, of the DRP logic on CLK_50, resets it
+   -- through a flip-flop of CLK_50 and two of this clock instead of asynchronously; it stays high for all of S_0
+   -- and S_P1, while DCM_1 is programmed and runs.
+   bufg_clk1 : BUFG
+   port map (I => clk1_direct, O => clk1_direct_g);
+
+   process (CLKDRP)
    begin
-      if dcm2_res = '1' then
-         count <= (others => '0');
-      elsif rising_edge(clk1_direct) then
-         if count_311 = '1' then
+      if rising_edge(CLKDRP) then
+         dcm2_res_r <= dcm2_res;   -- a flip-flop before the crossing (dcm2_res is decoded from the state)
+      end if;
+   end process;
+
+   process (clk1_direct_g)
+   begin
+      if rising_edge(clk1_direct_g) then
+         dcm2_res_s <= dcm2_res_s(0) & dcm2_res_r;
+      end if;
+   end process;
+
+   -- count_309 is high in the clock of 309, so count_311 and count_clr (high in the clocks the counter goes to 0:
+   -- those of count_311 and of the reset) are flip-flops of one gate each, and count_clr drives the synchronous reset
+   -- of the counter without logic in front of it (a compare of 9 bits and the reset in one clock missed 3.2 ns)
+   process (clk1_direct_g)
+   begin
+      if rising_edge(clk1_direct_g) then
+         if count = "100110100" then
+            count_309 <= '1';
+         else
+            count_309 <= '0';
+         end if;
+         count_clr <= count_309 or dcm2_res_s(0);
+         if count_clr = '1' then
             count <= (others => '0');
          else
             count <= count + 1;
          end if;
       end if;
    end process;
-   
-   process (clk1_direct, dcm2_res)
+
+   process (clk1_direct_g)
    begin
-      if dcm2_res = '1' then
-         clk1_divide <= '0';
-      elsif rising_edge(clk1_direct) then
-         if count_155 = '1' then
-            clk1_divide <= '1';
-         elsif count_311 = '1' then
+      if rising_edge(clk1_direct_g) then
+         if dcm2_res_s(1) = '1' then
+            count_155 <= '0';
+            count_311 <= '0';
             clk1_divide <= '0';
+         else
+            if count = "010011010" then
+               count_155 <= '1';
+            else
+               count_155 <= '0';
+            end if;
+            count_311 <= count_309;
+            if count_155 = '1' then
+               clk1_divide <= '1';
+            elsif count_311 = '1' then
+               clk1_divide <= '0';
+            end if;
          end if;
       end if;
    end process;
@@ -322,10 +369,15 @@ begin
    dcm_2 : DCM_CLKGEN
    generic map
    (
+      -- karabas: keep the 11/2 of the ZX Next. drp_dcm waits for LOCKED on these values before it programs the
+      -- DCM, and CLKFX must be in its range then: 5.4 MHz from the 0.99 MHz of the divider (128K 50Hz). 2/20 (an
+      -- analysis value) did not lock: no HDMI clocks on the Mini G (the unisim model locks). ngdbuild derives
+      -- with the higher of CLKFX_MD_MAX and M/D: the analysis takes the pixel clock through I0 of BUFGMUX_CLK1
+      -- (clk1_divide is a clock from logic) as 28 MHz * 0.24586 (dcm_1) * 5.5 = 37.86 MHz, see dcm_1.
       CLKFX_MULTIPLY => 11,      -- Multiply value - M - (2-256)
       CLKFX_DIVIDE   => 2,       -- Divide value - D - (1-256)
       CLKFX_MD_MAX   => 5.5,     -- Specify maximum M/D ratio for timing analysis
-      CLKIN_PERIOD   => 144.7    -- Input clock period specified in nS   1000.0
+      CLKIN_PERIOD   => 145.26   -- Input clock period specified in nS (karabas: 35.714 / 0.24586, was 144.7)
    )
    port map
    (
@@ -355,7 +407,7 @@ begin
       REF_JITTER         => 0.1,                   -- Reference Clock Jitter in UI (0.000-0.999).
       RESET_ON_LOSS_OF_LOCK => FALSE,              -- Must be set to FALSE
   
-      CLKIN_PERIOD       => 26.798,                -- Input clock period in ns to ps resolution (i.e. 33.333 is 30 MHz)
+      CLKIN_PERIOD       => 26.4,  -- karabas: 37.86 MHz, 48K 50Hz (was 26.798)                -- Input clock period in ns to ps resolution (i.e. 33.333 is 30 MHz)
       CLKFBOUT_MULT      => 25,                    -- Multiply value for all CLKOUT clock outputs (1-64)
       DIVCLK_DIVIDE      => 1,                     -- Division value for all output clocks (1-52)
       
@@ -395,9 +447,9 @@ begin
   
       CLKIN    => clk2,       -- 1-bit input: Clock input
   
-      CLKOUT0  => clkhdmi5,   -- 1-bit output: Clock output
-      CLKOUT1  => clkhdmi5n,  -- 1-bit output: Clock output
-      CLKOUT2  => clkhdmi,    -- 1-bit output: Clock output
+      CLKOUT0  => clkhdmi5_pll,   -- 1-bit output: Clock output
+      CLKOUT1  => clkhdmi5n_pll,  -- 1-bit output: Clock output
+      CLKOUT2  => clkhdmi_pll,    -- 1-bit output: Clock output
       CLKOUT3  => open,       -- 1-bit output: Clock output
       CLKOUT4  => open,       -- 1-bit output: Clock output
       CLKOUT5  => open,       -- 1-bit output: Clock output
@@ -421,6 +473,15 @@ begin
       end if;
    end process;
    
+   -- karabas: the outputs of PLL_3 through BUFGs; the ZX Next left them to the local routing (the pixel clock of
+   -- some 1100 flip-flops of zhdmi and hdmi_frame)
+   bufg_hdmi5 : BUFG
+   port map (I => clkhdmi5_pll, O => clkhdmi5);
+   bufg_hdmi5n : BUFG
+   port map (I => clkhdmi5n_pll, O => clkhdmi5n);
+   bufg_hdmi : BUFG
+   port map (I => clkhdmi_pll, O => clkhdmi);
+
    process (clkhdmi, locked)
    begin
       if locked = '0' then

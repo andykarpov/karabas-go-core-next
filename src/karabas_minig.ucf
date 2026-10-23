@@ -222,56 +222,92 @@ NET "FLASH_SCK"        LOC="R11"    | IOSTANDARD = LVCMOS33; # CONF_CLK
 NET "FLASH_WP_N"       LOC="N12"    | IOSTANDARD = LVCMOS33; # CONF_IO2
 NET "FLASH_HOLD_N"     LOC="P12"    | IOSTANDARD = LVCMOS33; # CONF_IO3
 
+# ------------------------------------------------------------------------------------------------------------
+# Timing constraints. This block is the same in karabas_go.ucf, karabas_mini.ucf and karabas_minig.ucf but for the
+# parts of the boards after it.
 #
-# TIMING CONSTRAINTS
-#
-
-TIMESPEC TSF2P  = FROM : FFS   : TO : PADS  : 10 ns;
-
-NET "CLK_50" TNM_NET = "CLK_50" | KEEP | S | PERIOD = 20 ns;
-
-NET "CLK_28" TNM_NET = "CLK_28" | KEEP | S;
-NET "CLK_28_n" TNM_NET = "CLK_28_n" | KEEP | S;
-NET "CLK_28x5_n" TNM_NET = "CLK_28x5_n" | KEEP | S;
-
-NET "clk_28_div<7>" KEEP | S | PERIOD = 7680 ns;
-NET "clk_28_div<6>" KEEP | S | PERIOD = 3840 ns;
-
-TIMESPEC "TS_CLK_28" = PERIOD "CLK_28" 30 ns;
-TIMESPEC "TS_CLK_28_n" = PERIOD "CLK_28_n" TS_CLK_28 PHASE + 15 ns;
-TIMESPEC "TS_CLK_28x5_n" = PERIOD "CLK_28x5_n" TS_CLK_28/5 PHASE + 3 ns;
-
+# Clocks (rtl/karabas_*_top.vhd, rtl/zxnext/pll/S6):
+#   CLK_50MHZ -> IBUFG -> system_pll (PLL_ADV, reprogrammed through DRP for the VGA modes) and BUFG CLK_50 (the
+#                DRP logic of system_pll and hdmi_pll)
+#   system_pll: CLK_28 (the machine, the SRAM cycle, the MCU link), CLK_28_n (its inverse), CLK_14, CLK_7,
+#               CLK_28x5_n (the SRAM write pulse). VGA-0: 28 MHz, 5x; VGA-1: 28.57 MHz, x4.67 (Mini, Mini G build
+#               system_pll_reduced, VGA-0 and VGA-1; the Go all of VGA-0..6, up to 33 MHz). The PERIOD of
+#               CLK_50MHZ is derived with the static values (VGA-0); `make <board>-modes` analyses the routed
+#               design with the others.
+#   CLK_CPU: the BUFGMUX of CLK_28 (28 MHz) and cpu_clk_s, a flip-flop on CLK_28 (3.5 / 7 / 14 MHz, the ZX Next
+#            design): its flip-flops are covered by the PERIOD of CLK_28 through the BUFGMUX input I1;
+#            `make <board>-modes` also analyses them on cpu_clk_s.
+#   hdmi_pll (Mini, Mini G): CLK_28 -> DCM_CLKGEN -> DCM_CLKGEN -> PLL_BASE: CLK_HDMI 26.2..27.04 MHz (27.6 in
+#            VGA-1), CLK_HDMIx5, CLK_HDMIx5_n. The derived PERIODs use CLKFX_MD_MAX (see hdmi_pll.vhd): the
+#            chain gives the fastest frame, not the 309 MHz of the first DCM in 128K 50Hz (TS_HDMI_DIV below).
+# ------------------------------------------------------------------------------------------------------------
+# T8 drives the PLL (IBUFG) and a BUFG for the DRP logic (CLK_50): both cannot have the dedicated route of the pin,
+# map places the BUFG elsewhere. The skew of CLK_50 is in the analysis (it runs the DRP of system_pll / hdmi_pll and
+# crosses to CLK_28 through synchronisers, TS_50_TO_CORE).
 NET "CLK_50MHZ" CLOCK_DEDICATED_ROUTE = FALSE;
+NET "CLK_50MHZ" TNM_NET = "TG_CLK_50MHZ";
+TIMESPEC "TS_CLK_50MHZ" = PERIOD "TG_CLK_50MHZ" 20 ns HIGH 50%;
 
-# Uncomment constraints below depending on g_video_inc setting in zxnext_top_issue2.vhd
+NET "CLK_50" TNM_NET = "TG_CLK_50";
+NET "CLK_28" TNM_NET = "TG_CLK_28";
+NET "CLK_28_n" TNM_NET = "TG_CLK_28_N";
+NET "CLK_14" TNM_NET = "TG_CLK_14";
+NET "CLK_7" TNM_NET = "TG_CLK_7";
+NET "CLK_28x5_n" TNM_NET = "TG_CLK_28X5";
+TIMEGRP "TG_CORE" = "TG_CLK_28" "TG_CLK_28_N" "TG_CLK_14" "TG_CLK_7" "TG_CLK_28X5";
+# the flip-flops on the cpu clock (also in the group of CLK_28 through the BUFGMUX), for the analysis of -modes
+NET "CLK_CPU" TNM_NET = "TG_CLK_CPU";
+# The cpu clock: CLK_CPU is the BUFGMUX of the PLL output of CLK_28 (28 MHz) and cpu_clk_s, a flip-flop on CLK_28
+# (3.5 / 7 / 14 MHz); `make <board>-modes` analyses the CPU flip-flops on it at 14 MHz with the edges of CLK_28
+# (`cpu`). Its clock is 2.5 to 5.2 ns later (0.5 ns clock to output, this route, against the route of I1), which
+# trce cannot model:
+# hundreds of paths CLK_28 -> CPU flip-flops (the reads of ports FE, FFFD, FFDF, the floating bus, SD MISO; most on
+# the falling cpu clock, which comes with a rising CLK_28 at 14 MHz) have only 0.25 to 1.4 ns of hold slack there.
+NET "cpu_clk_s" MAXDELAY = 2.5 ns;
+# What -modes leaves open (the clock design of the ZX Next, not changed here):
+# - VGA-1 and VGA-2 (28.57 / 29.46 MHz): CLK_28x5_n is 4.67 x CLK_28 (no PLL setting gives 5x there):
+#   sram_oe_n_active -> the write pulse counter sram_we_line has 1.25 ns on one edge of three (about -1 ns); on the
+#   Mini / Mini G a few paths of the faster HDMI clocks miss by up to 0.1 ns.
 
-# (1) g_video_inc = "X1" ; VGA ONLY OR VGA+HDMI
+# MCU link (kg_mcu): SPI mode 0 from the RP2040 at 16 MHz (no bursts in this core). MCU_SCK is not related to
+# CLK_50MHZ: kg_mcu crosses with toggle synchronisers and holds the data for a byte (or from the request to the
+# next SCK edges), so the data paths are bounded by one SCK period.
+NET "MCU_SCK" TNM_NET = "TG_CLK_MCU";
+TIMESPEC "TS_CLK_MCU" = PERIOD "TG_CLK_MCU" 32 MHz;
+TIMESPEC "TS_MCU_TO_CORE" = FROM "TG_CLK_MCU" TO "TG_CORE" 31.25 ns DATAPATHONLY;
+TIMESPEC "TS_CORE_TO_MCU" = FROM "TG_CORE" TO "TG_CLK_MCU" 31.25 ns DATAPATHONLY;
 
-#NET "CLK_14" KEEP | S | PERIOD = 60 ns;
-#NET "CLK_7" KEEP | S | PERIOD = 120 ns;
-#NET "clk_3m5_cont" KEEP | S | PERIOD = 240 ns;
+# CLK_50 <-> CLK_28: the DRP of system_pll and hdmi_pll runs on CLK_50; what it takes from CLK_28 (SSTEP, the
+# hdmi reset and restart) goes through 2-4 flip-flops, the video mode / frame type are static while it reads
+# them, and SRDY_N / VALID go back as levels. The PLL ratio changes with the VGA mode (25/14, 28/16...), so the
+# phase analysis of the derived PERIODs (one VCO step on some edges) does not apply: one CLK_50 period.
+TIMESPEC "TS_50_TO_CORE" = FROM "TG_CLK_50" TO "TG_CORE" 20 ns DATAPATHONLY;
+TIMESPEC "TS_CORE_TO_50" = FROM "TG_CORE" TO "TG_CLK_50" 20 ns DATAPATHONLY;
 
-# (2) g_video_inc = "10" ; HDMI ONLY
+# SRAM, asynchronous, 10 ns (tAA): the address, /CE and /OE leave registers on CLK_28 and the data is taken into
+# a register on the next CLK_28 edge (35 ns in VGA-1): 12 ns out + 10 ns tAA + 12 ns in + 1 ns of traces. The write
+# pulse is made on CLK_28x5_n inside the CLK_28 period that holds address and data.
+TIMEGRP "TG_SRAM_IN" = PADS("MD<*>");
+TIMEGRP "TG_SRAM_OUT" = "TG_SRAM_IN" PADS("MA<*>") PADS("MRD_N<*>") PADS("MWR_N<*>");
+TIMESPEC "TS_SRAM_OUT" = FROM FFS TO "TG_SRAM_OUT" 12 ns DATAPATHONLY;
+TIMESPEC "TS_SRAM_IN" = FROM "TG_SRAM_IN" TO FFS 12 ns DATAPATHONLY;
 
-NET "CLK_14" TNM_NET = "CLK_14" | KEEP |S;
-NET "CLK_7" TNM_NET = "CLK_7" | KEEP | S;
-
-TIMESPEC "TS_CLK_14" = PERIOD "CLK_14" TS_CLK_28*2;
-TIMESPEC "TS_CLK_7" = PERIOD "CLK_7" TS_CLK_28*4;
-
-# (3) g_video_inc = "1X" ; HDMI ONLY OR VGA+HDMI
-
-NET "CLK_HDMI" TNM_NET = "CLK_HDMI" | S;
-NET "CLK_HDMIx5" TNM_NET = "CLK_HDMIx5" | S;
-NET "CLK_HDMIx5_n" TNM_NET = "CLK_HDMIx5_n" | S;
-
-TIMESPEC "TS_CLK_HDMI" = PERIOD "CLK_HDMI" 35 ns;
-TIMESPEC "TS_CLK_HDMIx5" = PERIOD "CLK_HDMIx5" TS_CLK_HDMI/5;
-TIMESPEC "TS_CLK_HDMIx5_n" = PERIOD "CLK_HDMIx5_n" TS_CLK_HDMI/5 PHASE + 3.5 ns;
-
-NET "MCU_SCK" TNM_NET = "MCU_SCK" | KEEP | S;
-TIMESPEC "TS_MCU_SCK" = PERIOD "MCU_SCK" 30 MHz;
-
-PIN "BUFG_CLK50.O" CLOCK_DEDICATED_ROUTE = FALSE;
-PIN "gen_clksys_0.CLKSYS_PLL_REDUCED/BUFG_CLK0.O" CLOCK_DEDICATED_ROUTE = FALSE;
-
+# ---- Mini, Mini G: HDMI ---------------------------------------------------------------------------------------
+# The pixel clock comes from CLK_28 through two DCM_CLKGEN, whose CLKFX has no phase relation to its input: the
+# derived PERIODs relate CLK_HDMI to CLK_28, but the domains are asynchronous. The crossings: hdmi_frame (a line
+# buffer written on CLK_14 and read on CLK_HDMI; the frame sync of CLK_7 and the scanline setting through
+# flip-flops), hdmi_out (dvi_only / audio enable through two flip-flops, the audio sample with a toggle and three),
+# the locked flag of hdmi_pll (CLK_50) as an asynchronous reset. Bounded by one pixel period.
+NET "CLK_HDMI" TNM_NET = "TG_CLK_HDMI";
+TIMESPEC "TS_CORE_TO_HDMI" = FROM "TG_CORE" TO "TG_CLK_HDMI" 36 ns DATAPATHONLY;
+TIMESPEC "TS_HDMI_TO_CORE" = FROM "TG_CLK_HDMI" TO "TG_CORE" 36 ns DATAPATHONLY;
+TIMESPEC "TS_50_TO_HDMI" = FROM "TG_CLK_50" TO "TG_CLK_HDMI" 20 ns DATAPATHONLY;
+TIMESPEC "TS_HDMI_TO_50" = FROM "TG_CLK_HDMI" TO "TG_CLK_50" 20 ns DATAPATHONLY;
+# The 128K 50Hz divider of hdmi_pll (by 311, on the BUFG of the first DCM_CLKGEN, up to 309 MHz): its reset comes
+# from the DRP logic (CLK_50), through two flip-flops of its clock; the DCM output has no phase relation to CLK_50.
+NET "gen_hdmi_pll_1.CLKHDMI_PLL/clk1_direct_g" TNM_NET = "TG_CLK_HDMI_DIV";
+TIMESPEC "TS_50_TO_HDMI_DIV" = FROM "TG_CLK_50" TO "TG_CLK_HDMI_DIV" 3.2 ns DATAPATHONLY;
+# Its clock: CLK_28 * 210/19 (309.47 MHz; pcf_modes.py scales it for VGA-1). The derived PERIOD of this net is
+# 6.9 MHz (CLKFX_MD_MAX of dcm_1 is set for the chain to the pixel clock), so this one has the priority on the paths
+# of the divider. In ns: ngdbuild drops the PRIORITY of a PERIOD relative to another TS.
+TIMESPEC "TS_HDMI_DIV" = PERIOD "TG_CLK_HDMI_DIV" 3.2313 ns HIGH 50% PRIORITY -1;

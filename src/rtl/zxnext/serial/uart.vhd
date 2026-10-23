@@ -93,18 +93,7 @@ end entity;
 
 architecture rtl of uart is
 
-   component sdpram_64_9 is
-   PORT (
-
-      DPRA  : IN  STD_LOGIC_VECTOR(6-1 downto 0) := (OTHERS => '0');
-      CLK   : IN STD_LOGIC;
-      WE    : IN  STD_LOGIC;
-      DPO   : OUT STD_LOGIC_VECTOR(9-1 downto 0);
-      A     : IN  STD_LOGIC_VECTOR(6-1-(4*0*boolean'pos(6>4)) downto 0) := (OTHERS => '0');
-      D     : IN  STD_LOGIC_VECTOR(9-1 downto 0) := (OTHERS => '0')
-
-   );
-   end component;
+   -- karabas: the coregen core sdpram_64_9 is replaced by kg_dist_sdpram of karabas-go-modules
 
    signal uart_select_wr            : std_logic;
    signal uart_frame_wr             : std_logic;
@@ -504,17 +493,20 @@ begin
    
    -- cpu write, uart read
    
-   uart0_tx_fifo: sdpram_64_9  -- 64x8 needed but the natural size for xilinx is 64x9
+   -- karabas: kg_dist_sdpram in place of the coregen sdpram_64_9
+   uart0_tx_fifo: entity work.kg_dist_sdpram  -- 64x8 needed but the natural size for xilinx is 64x9
+   generic map (DW => 9, AW => 6)
    port map
    (
       -- async read (uart)
-      DPRA => uart0_tx_fifo_raddr,
-      DPO  => uart0_tx_byte,
+      dpra => uart0_tx_fifo_raddr,
+      dpo  => uart0_tx_byte,
+      spo  => open,
       -- sync write (cpu)
-      CLK  => i_CLK_n,
-      WE   => uart0_tx_fifo_we,
-      A    => uart0_tx_fifo_waddr,
-      D    => '0' & i_cpu_d
+      clk  => i_CLK_n,
+      we   => uart0_tx_fifo_we,
+      a    => uart0_tx_fifo_waddr,
+      d    => '0' & i_cpu_d
    );
    
    uart0_tx_en <= '1' when uart0_tx_busy = '0' and uart0_tx_fifo_empty = '0' else '0';
@@ -689,17 +681,20 @@ begin
    
    -- cpu write, uart read
    
-   uart1_tx_fifo: sdpram_64_9  -- 64x8 needed but the natural size for xilinx is 64x9
+   -- karabas: kg_dist_sdpram in place of the coregen sdpram_64_9
+   uart1_tx_fifo: entity work.kg_dist_sdpram  -- 64x8 needed but the natural size for xilinx is 64x9
+   generic map (DW => 9, AW => 6)
    port map
    (
       -- async read (uart)
-      DPRA => uart1_tx_fifo_raddr,
-      DPO  => uart1_tx_byte,
+      dpra => uart1_tx_fifo_raddr,
+      dpo  => uart1_tx_byte,
+      spo  => open,
       -- sync write (cpu)
-      CLK  => i_CLK_n,
-      WE   => uart1_tx_fifo_we,
-      A    => uart1_tx_fifo_waddr,
-      D    => '0' & i_cpu_d
+      clk  => i_CLK_n,
+      we   => uart1_tx_fifo_we,
+      a    => uart1_tx_fifo_waddr,
+      d    => '0' & i_cpu_d
    );
    
    uart1_tx_en <= '1' when uart1_tx_busy = '0' and uart1_tx_fifo_empty = '0' else '0';
