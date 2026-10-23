@@ -260,9 +260,10 @@ begin
    (
       CLKFX_MULTIPLY => 2,       -- Multiply value - M - (2-256)
       CLKFX_DIVIDE   => 10,      -- Divide value - D - (1-256)
-      -- karabas: 210/19 (128K 50Hz, 309 MHz for the divider below) is the highest M/D of drp_dcm.vhd; the ZX Next
-      -- had 0.2 here, so the analysis took this clock for 5.6 MHz
-      CLKFX_MD_MAX   => 11.053,  -- Specify maximum M/D ratio for timing analysis
+      -- karabas: for the analysis of the chain to PLL_3 (the ZX Next had 0.2): 0.24586 * 5.5 (dcm_2) = 1.3522 =
+      -- 75/52 * 15/16, the fastest frame (48K 50Hz, 27.04 MHz). The real M/D go up to 210/19 (128K 50Hz, 309 MHz
+      -- for the divider below): the ucf has its own PERIOD for the divider (TS_HDMI_DIV).
+      CLKFX_MD_MAX   => 0.24586, -- Specify maximum M/D ratio for timing analysis
       CLKIN_PERIOD   => 35.714   -- Input clock period specified in nS
    )
    port map
@@ -368,15 +369,15 @@ begin
    dcm_2 : DCM_CLKGEN
    generic map
    (
-      -- karabas: the analysis derives the pixel clock through I0 of BUFGMUX_CLK1 (clk1_divide is a clock from
-      -- logic) with both CLKFX_MD_MAX: 11.053 * 0.12234 = 1.3522 = 75/52 * 15/16, the fastest frame (48K 50Hz,
-      -- 27.04 MHz); the real M/D here go up to 75/2 after the divider. ngdbuild takes the higher of
-      -- CLKFX_MD_MAX and CLKFX_MULTIPLY / DIVIDE, the values before it is programmed (PLL_3 is held in reset
-      -- until then): 2/20, the ZX Next had 11/2.
-      CLKFX_MULTIPLY => 2,       -- Multiply value - M - (2-256)
-      CLKFX_DIVIDE   => 20,      -- Divide value - D - (1-256)
-      CLKFX_MD_MAX   => 0.12234, -- Specify maximum M/D ratio for timing analysis
-      CLKIN_PERIOD   => 24.75    -- Input clock period specified in nS (karabas: 40.4 MHz, 48K 50Hz, was 144.7)
+      -- karabas: keep the 11/2 of the ZX Next. drp_dcm waits for LOCKED on these values before it programs the
+      -- DCM, and CLKFX must be in its range then: 5.4 MHz from the 0.99 MHz of the divider (128K 50Hz). 2/20 (an
+      -- analysis value) did not lock: no HDMI clocks on the Mini G (the unisim model locks). ngdbuild derives
+      -- with the higher of CLKFX_MD_MAX and M/D: the analysis takes the pixel clock through I0 of BUFGMUX_CLK1
+      -- (clk1_divide is a clock from logic) as 28 MHz * 0.24586 (dcm_1) * 5.5 = 37.86 MHz, see dcm_1.
+      CLKFX_MULTIPLY => 11,      -- Multiply value - M - (2-256)
+      CLKFX_DIVIDE   => 2,       -- Divide value - D - (1-256)
+      CLKFX_MD_MAX   => 5.5,     -- Specify maximum M/D ratio for timing analysis
+      CLKIN_PERIOD   => 145.26   -- Input clock period specified in nS (karabas: 35.714 / 0.24586, was 144.7)
    )
    port map
    (

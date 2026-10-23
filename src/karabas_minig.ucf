@@ -238,7 +238,8 @@ NET "FLASH_HOLD_N"     LOC="P12"    | IOSTANDARD = LVCMOS33; # CONF_IO3
 #            design): its flip-flops are covered by the PERIOD of CLK_28 through the BUFGMUX input I1;
 #            `make <board>-modes` also analyses them on cpu_clk_s.
 #   hdmi_pll (Mini, Mini G): CLK_28 -> DCM_CLKGEN -> DCM_CLKGEN -> PLL_BASE: CLK_HDMI 26.2..27.04 MHz (27.6 in
-#            VGA-1), CLK_HDMIx5, CLK_HDMIx5_n. The derived PERIODs use CLKFX_MD_MAX (see hdmi_pll.vhd).
+#            VGA-1), CLK_HDMIx5, CLK_HDMIx5_n. The derived PERIODs use CLKFX_MD_MAX (see hdmi_pll.vhd): the
+#            chain gives the fastest frame, not the 309 MHz of the first DCM in 128K 50Hz (TS_HDMI_DIV below).
 # ------------------------------------------------------------------------------------------------------------
 # T8 drives the PLL (IBUFG) and a BUFG for the DRP logic (CLK_50): both cannot have the dedicated route of the pin,
 # map places the BUFG elsewhere. The skew of CLK_50 is in the analysis (it runs the DRP of system_pll / hdmi_pll and
@@ -306,3 +307,7 @@ TIMESPEC "TS_HDMI_TO_50" = FROM "TG_CLK_HDMI" TO "TG_CLK_50" 20 ns DATAPATHONLY;
 # from the DRP logic (CLK_50), through two flip-flops of its clock; the DCM output has no phase relation to CLK_50.
 NET "gen_hdmi_pll_1.CLKHDMI_PLL/clk1_direct_g" TNM_NET = "TG_CLK_HDMI_DIV";
 TIMESPEC "TS_50_TO_HDMI_DIV" = FROM "TG_CLK_50" TO "TG_CLK_HDMI_DIV" 3.2 ns DATAPATHONLY;
+# Its clock: CLK_28 * 210/19 (309.47 MHz; pcf_modes.py scales it for VGA-1). The derived PERIOD of this net is
+# 6.9 MHz (CLKFX_MD_MAX of dcm_1 is set for the chain to the pixel clock), so this one has the priority on the paths
+# of the divider. In ns: ngdbuild drops the PRIORITY of a PERIOD relative to another TS.
+TIMESPEC "TS_HDMI_DIV" = PERIOD "TG_CLK_HDMI_DIV" 3.2313 ns HIGH 50% PRIORITY -1;

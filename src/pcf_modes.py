@@ -3,7 +3,8 @@
 # clocks, for the trce runs of `make <board>-modes`. ngdbuild derives the PERIODs of system_pll from the static
 # attributes of its PLL_ADV (VGA-0); the DRP logic reprograms it for the other VGA modes.
 #   vga<n>     the PERIODs (and the 180 degree phases) of the PLL outputs with the S<n> values of the .v file;
-#              the clocks derived from them (hdmi_pll, the MIDI DCM) follow, as they do on the board.
+#              the clocks derived from them (hdmi_pll, the MIDI DCM) follow, as they do on the board; so does
+#              TS_HDMI_DIV (Mini, Mini G), the 128K divider of hdmi_pll at CLK_28 * 210/19.
 #   cpu        the CPU flip-flops (TG_CLK_CPU) on cpu_clk_s, the BUFGMUX input I0 of CLK_CPU made by a flip-flop on
 #              CLK_28 (3.5 / 7 / 14 MHz): taken out of the group of CLK_28 (BUFGMUX input I1, the 28 MHz mode) and
 #              given the PERIOD of 14 MHz, the fastest of these, with the edges of CLK_28. The clock of I0 comes
@@ -48,6 +49,9 @@ if mode.startswith('vga'):
         return '%sTS_CLK_50MHZ / %.12g%s%s' % (m.group(1), factor, ph, m.group(5))
 
     text = ts_re.sub(sub, text)
+    f28 = mult / (div * attr('CLKOUT0_DIVIDE'))
+    text = re.sub(r'(TS_HDMI_DIV = PERIOD TIMEGRP\s+"TG_CLK_HDMI_DIV"\s+)[\d.]+(\s+ns)',
+                  lambda m: '%s%.12g%s' % (m.group(1), 20.0 * 19 / (f28 * 210), m.group(2)), text)
     print('pcf_modes.py: VGA-%d, VCO %g MHz, CLK_28 %.4f MHz' % (n, 50.0 * mult / div,
           50.0 * mult / div / attr('CLKOUT0_DIVIDE')))
 elif mode == 'cpu':
