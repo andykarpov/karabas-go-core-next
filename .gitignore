@@ -77,3 +77,4 @@ make_core.py
 # make <board>-modes
 src/karabas_*_vga*.log
 src/karabas_*_cpu*.log
+src/kg_*.stamp
