@@ -126,7 +126,14 @@ architecture rtl of hid_parser is
 	constant ZX_K_H : natural := 38;
 	constant ZX_K_B : natural := 39;
 
-	signal kb_data : std_logic_vector(39 downto 0) := (others => '0'); -- 40 keys
+	signal kb_data : std_logic_vector(39 downto 0) := (others => '0'); -- 40 keys: the matrix being built from the slots
+	-- the six key slots are decoded one per clock by one case (as the spec256 / baseconf cores): one decoder instead
+	-- of one per slot (the parallel version was ~2150 LUT); the matrix, the extended keys and the F keys built from
+	-- them are taken into the *_latch signals every 6 clocks
+	signal kb_data_latch : std_logic_vector(39 downto 0) := (others => '0');
+	signal usb_idx : unsigned(2 downto 0) := (others => '0');
+	signal ext_keys_latch : std_logic_vector(15 downto 0) := (others => '0');
+	signal f_keys_int : std_logic_vector(12 downto 1) := (others => '0');
 	
 	signal data : std_logic_vector(47 downto 0);
 	
@@ -210,56 +217,56 @@ begin
 	-- incoming data of pressed keys from usb hid report
 	data <= KB_DAT5 & KB_DAT4 & KB_DAT3 & KB_DAT2 & KB_DAT1 & KB_DAT0;
 
-	process( kb_data, A)
+	process( kb_data_latch, A)
 	begin
-		KB_DO(0) <=	not(( kb_data(ZX_K_CS)  and not( A(8)  ) ) 
-					or    ( kb_data(ZX_K_A)  and not(   A(9)  ) ) 
-					or    ( kb_data(ZX_K_Q) and not(    A(10) ) ) 
-					or    ( kb_data(ZX_K_1) and not(    A(11) ) ) 
-					or    ( kb_data(ZX_K_0) and not(    A(12) ) ) 
-					or    ( kb_data(ZX_K_P) and not(    A(13) ) ) 
-					or    ( kb_data(ZX_K_ENT) and not(  A(14) ) ) 
-					or    ( kb_data(ZX_K_SP) and not(   A(15) ) )
+		KB_DO(0) <=	not(( kb_data_latch(ZX_K_CS)  and not( A(8)  ) ) 
+					or    ( kb_data_latch(ZX_K_A)  and not(   A(9)  ) ) 
+					or    ( kb_data_latch(ZX_K_Q) and not(    A(10) ) ) 
+					or    ( kb_data_latch(ZX_K_1) and not(    A(11) ) ) 
+					or    ( kb_data_latch(ZX_K_0) and not(    A(12) ) ) 
+					or    ( kb_data_latch(ZX_K_P) and not(    A(13) ) ) 
+					or    ( kb_data_latch(ZX_K_ENT) and not(  A(14) ) ) 
+					or    ( kb_data_latch(ZX_K_SP) and not(   A(15) ) )
 					);
 
-		KB_DO(1) <=	not( ( kb_data(ZX_K_Z)  and not(A(8) ) ) 
-					or   ( kb_data(ZX_K_S)  and not(A(9) ) ) 
-					or   ( kb_data(ZX_K_W) and not(A(10)) ) 
-					or   ( kb_data(ZX_K_2) and not(A(11)) ) 
-					or   ( kb_data(ZX_K_9) and not(A(12)) ) 
-					or   ( kb_data(ZX_K_O) and not(A(13)) ) 
-					or   ( kb_data(ZX_K_L) and not(A(14)) ) 
-					or   ( kb_data(ZX_K_SS) and not(A(15)) ) 
+		KB_DO(1) <=	not( ( kb_data_latch(ZX_K_Z)  and not(A(8) ) ) 
+					or   ( kb_data_latch(ZX_K_S)  and not(A(9) ) ) 
+					or   ( kb_data_latch(ZX_K_W) and not(A(10)) ) 
+					or   ( kb_data_latch(ZX_K_2) and not(A(11)) ) 
+					or   ( kb_data_latch(ZX_K_9) and not(A(12)) ) 
+					or   ( kb_data_latch(ZX_K_O) and not(A(13)) ) 
+					or   ( kb_data_latch(ZX_K_L) and not(A(14)) ) 
+					or   ( kb_data_latch(ZX_K_SS) and not(A(15)) ) 
 					);
 
-		KB_DO(2) <=		not( ( kb_data(ZX_K_X) and not( A(8)) ) 
-					or   ( kb_data(ZX_K_D) and not( A(9)) ) 
-					or   ( kb_data(ZX_K_E) and not(A(10)) ) 
-					or   ( kb_data(ZX_K_3) and not(A(11)) ) 
-					or   ( kb_data(ZX_K_8) and not(A(12)) ) 
-					or   ( kb_data(ZX_K_I) and not(A(13)) ) 
-					or   ( kb_data(ZX_K_K) and not(A(14)) ) 
-					or   ( kb_data(ZX_K_M) and not(A(15)) ) 
+		KB_DO(2) <=		not( ( kb_data_latch(ZX_K_X) and not( A(8)) ) 
+					or   ( kb_data_latch(ZX_K_D) and not( A(9)) ) 
+					or   ( kb_data_latch(ZX_K_E) and not(A(10)) ) 
+					or   ( kb_data_latch(ZX_K_3) and not(A(11)) ) 
+					or   ( kb_data_latch(ZX_K_8) and not(A(12)) ) 
+					or   ( kb_data_latch(ZX_K_I) and not(A(13)) ) 
+					or   ( kb_data_latch(ZX_K_K) and not(A(14)) ) 
+					or   ( kb_data_latch(ZX_K_M) and not(A(15)) ) 
 					);
 
-		KB_DO(3) <=		not( ( kb_data(ZX_K_C) and not( A(8)) ) 
-					or   ( kb_data(ZX_K_F) and not( A(9)) ) 
-					or   ( kb_data(ZX_K_R) and not(A(10)) ) 
-					or   ( kb_data(ZX_K_4) and not(A(11)) ) 
-					or   ( kb_data(ZX_K_7) and not(A(12)) ) 
-					or   ( kb_data(ZX_K_U) and not(A(13)) ) 
-					or   ( kb_data(ZX_K_J) and not(A(14)) ) 
-					or   ( kb_data(ZX_K_N) and not(A(15)) ) 
+		KB_DO(3) <=		not( ( kb_data_latch(ZX_K_C) and not( A(8)) ) 
+					or   ( kb_data_latch(ZX_K_F) and not( A(9)) ) 
+					or   ( kb_data_latch(ZX_K_R) and not(A(10)) ) 
+					or   ( kb_data_latch(ZX_K_4) and not(A(11)) ) 
+					or   ( kb_data_latch(ZX_K_7) and not(A(12)) ) 
+					or   ( kb_data_latch(ZX_K_U) and not(A(13)) ) 
+					or   ( kb_data_latch(ZX_K_J) and not(A(14)) ) 
+					or   ( kb_data_latch(ZX_K_N) and not(A(15)) ) 
 					);
 
-		KB_DO(4) <=		not( ( kb_data(ZX_K_V) and not( A(8)) ) 
-					or   ( kb_data(ZX_K_G) and not( A(9)) ) 
-					or   ( kb_data(ZX_K_T) and not(A(10)) ) 
-					or   ( kb_data(ZX_K_5) and not(A(11)) ) 
-					or   ( kb_data(ZX_K_6) and not(A(12)) ) 
-					or   ( kb_data(ZX_K_Y) and not(A(13)) ) 
-					or   ( kb_data(ZX_K_H) and not(A(14)) ) 
-					or   ( kb_data(ZX_K_B) and not(A(15)) ) 
+		KB_DO(4) <=		not( ( kb_data_latch(ZX_K_V) and not( A(8)) ) 
+					or   ( kb_data_latch(ZX_K_G) and not( A(9)) ) 
+					or   ( kb_data_latch(ZX_K_T) and not(A(10)) ) 
+					or   ( kb_data_latch(ZX_K_5) and not(A(11)) ) 
+					or   ( kb_data_latch(ZX_K_6) and not(A(12)) ) 
+					or   ( kb_data_latch(ZX_K_Y) and not(A(13)) ) 
+					or   ( kb_data_latch(ZX_K_H) and not(A(14)) ) 
+					or   ( kb_data_latch(ZX_K_B) and not(A(15)) ) 
 					);					
 	end process;
 
@@ -268,10 +275,15 @@ process (RESET, CLK)
 	variable is_shift : std_logic := '0';
 	variable is_cs_used : std_logic := '0';
 	variable is_ss_used : std_logic := '0';
+	variable current_scancode : std_logic_vector(7 downto 0);
 
 	begin
 		if RESET = '1' then
 			kb_data <= (others => '0');
+			kb_data_latch <= (others => '0');
+			usb_idx <= (others => '0');
+			ext_keys_latch <= (others => '0');
+			f_keys_int <= (others => '0');
 			is_shift := '0';
 			is_cs_used := '0';
 			is_ss_used := '0';
@@ -281,27 +293,32 @@ process (RESET, CLK)
 			
 		elsif CLK'event and CLK = '1' then
 				
-			F_KEYS <= (others => '0');
-				
 			-- macro state machine
 			if is_macros = '1' then 
 					macro_cnt <= macro_cnt + 1;
 					if (macro_cnt = "1111111111111111111111") then 
 					case macros_state is 
-						when MACRO_START  => kb_data <= (others => '0'); macros_state <= MACRO_CS_ON;
-						when MACRO_CS_ON  => kb_data(ZX_K_CS) <= '1';    macros_state <= MACRO_SS_ON;
-						when MACRO_SS_ON  => kb_data(ZX_K_SS) <= '1';    macros_state <= MACRO_SS_OFF;
-						when MACRO_SS_OFF => kb_data(ZX_K_SS) <= '0';    macros_state <= MACRO_KEY;
-						when MACRO_KEY    => kb_data(macros_key) <= '1'; macros_state <= MACRO_CS_OFF;
-						when MACRO_CS_OFF => kb_data(ZX_K_CS) <= '0'; kb_data(macros_key) <= '0'; macros_state <= MACRO_END;
-						when MACRO_END    => kb_data <= (others => '0'); is_macros <= '0';        macros_state <= MACRO_START;
+						when MACRO_START  => kb_data_latch <= (others => '0'); macros_state <= MACRO_CS_ON;
+						when MACRO_CS_ON  => kb_data_latch(ZX_K_CS) <= '1';    macros_state <= MACRO_SS_ON;
+						when MACRO_SS_ON  => kb_data_latch(ZX_K_SS) <= '1';    macros_state <= MACRO_SS_OFF;
+						when MACRO_SS_OFF => kb_data_latch(ZX_K_SS) <= '0';    macros_state <= MACRO_KEY;
+						when MACRO_KEY    => kb_data_latch(macros_key) <= '1'; macros_state <= MACRO_CS_OFF;
+						when MACRO_CS_OFF => kb_data_latch(ZX_K_CS) <= '0'; kb_data_latch(macros_key) <= '0'; macros_state <= MACRO_END;
+						when MACRO_END    => kb_data_latch <= (others => '0'); is_macros <= '0';        macros_state <= MACRO_START;
 						when others => null;
 					end case;
 					end if;
 			else
+				if usb_idx >= 5 then usb_idx <= (others => '0'); else usb_idx <= usb_idx + 1; end if;
+
+				if usb_idx = 0 then
 				macro_cnt <= (others => '0');
+				kb_data_latch <= kb_data; -- the matrix of the six slots before
+				ext_keys_latch <= ext_keys_int;
+				F_KEYS <= f_keys_int;
 				kb_data <= (others => '0');
 				ext_keys_int <= (others => '0');
+				f_keys_int <= (others => '0');
 				is_shift := '0';
 				is_cs_used := '0';
 				is_ss_used := '0';
@@ -352,9 +369,18 @@ process (RESET, CLK)
 				
 				-- Win
 				--if KB_STATUS(7) = '1' then end if;
+				end if;
 
-				for II in 0 to NUM_KEYS-1 loop		
-				case data((II+1)*8-1 downto II*8) is							
+				case to_integer(usb_idx) is
+					when 0 => current_scancode := KB_DAT0;
+					when 1 => current_scancode := KB_DAT1;
+					when 2 => current_scancode := KB_DAT2;
+					when 3 => current_scancode := KB_DAT3;
+					when 4 => current_scancode := KB_DAT4;
+					when others => current_scancode := KB_DAT5;
+				end case;
+
+				case current_scancode is							
 
 					-- DEL -> SS + C
 					when X"4c" => 
@@ -583,18 +609,18 @@ process (RESET, CLK)
 					when X"4d" =>	ext_keys_int(EX_GRAPH) <= '1';
 					
 					-- Fx keys
-					when X"3a" => F_KEYS(1) <= '1';  -- F1
-					when X"3b" => F_KEYS(2) <= '1';	-- F2
-					when X"3c" => F_KEYS(3) <= '1';	-- F3
-					when X"3d" => F_KEYS(4) <= '1';	-- F4
-					when X"3e" => F_KEYS(5) <= '1';	-- F5
-					when X"3f" => F_KEYS(6) <= '1';	-- F6
-					when X"40" => F_KEYS(7) <= '1';	-- F7
-					when X"41" => F_KEYS(8) <= '1';	-- F8
-					when X"42" => F_KEYS(9) <= '1';	-- F9
-					when X"43" => F_KEYS(10) <= '1';	-- F10
-					when X"44" => F_KEYS(11) <= '1';	-- F11
-					when X"45" => F_KEYS(12) <= '1';	-- F12
+					when X"3a" => f_keys_int(1) <= '1';  -- F1
+					when X"3b" => f_keys_int(2) <= '1';	-- F2
+					when X"3c" => f_keys_int(3) <= '1';	-- F3
+					when X"3d" => f_keys_int(4) <= '1';	-- F4
+					when X"3e" => f_keys_int(5) <= '1';	-- F5
+					when X"3f" => f_keys_int(6) <= '1';	-- F6
+					when X"40" => f_keys_int(7) <= '1';	-- F7
+					when X"41" => f_keys_int(8) <= '1';	-- F8
+					when X"42" => f_keys_int(9) <= '1';	-- F9
+					when X"43" => f_keys_int(10) <= '1';	-- F10
+					when X"44" => f_keys_int(11) <= '1';	-- F11
+					when X"45" => f_keys_int(12) <= '1';	-- F12
 	 
 					-- Soft-only keys
 					--when X"46" =>	-- PrtScr
@@ -604,7 +630,6 @@ process (RESET, CLK)
 					
 					when others => null;
 				end case;
-				end loop;
 				
 				-- map joysticks to keyboard
 				
@@ -728,7 +753,7 @@ process (RESET, CLK)
 		end if;
 	end process;
 	
-	EXT_KEYS <= ext_keys_int;
+	EXT_KEYS <= ext_keys_latch;
 	
 	-- receive joy map into registers
 	process (CLK, RESET)
