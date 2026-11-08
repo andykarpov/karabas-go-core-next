@@ -48,7 +48,7 @@ entity karabas_minig is
       g_machine_id      : unsigned(7 downto 0)  := X"0A";   -- X"0A" = ZX Spectrum Next, X"FA" = Anti Brick (reset disabled, bootrom)
       g_video_def       : unsigned(2 downto 0)  := "000";   -- video mode default (0-6, vga-0 & vga-1 produce hdmi if hdmi module is included)
       g_version         : unsigned(7 downto 0)  := X"32";   -- 3.02
-      g_sub_version     : unsigned(7 downto 0)  := X"01";   -- .01
+      g_sub_version     : unsigned(7 downto 0)  := X"02";   -- .02
       g_board_issue     : unsigned(3 downto 0)  := X"0";    -- issue 2 (see nextreg 0x0F)
       g_video_inc       : unsigned(1 downto 0)  := "10"     -- bit 1 = 1 to include HDMI module, bit 0 = 1 to include VGA module (if changed see zxnext_pins_issue2.ucf)
    );
