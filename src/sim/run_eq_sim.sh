@@ -1,6 +1,7 @@
 #!/bin/bash
 # The rewrites of the board glue against what they replace (Icarus Verilog):
 #   tb_hdmi_out: rtl/hdmi/hdmi_out.v, what reaches hdmi_tx (zhdmi) in place of the encoder of the ZX Next
+#   tb_audio_mixer: rtl/sound/audio_mixer.v, EAR and MIC held at 1 leave no constant level on the output
 #   tb_pcm5102:  the I2S stream of kg_pcm5102 (DIV_BITS 1 and 2, as the Go and the Mini G) with the testbench of
 #                karabas-go-modules (strict: all 16 bits, din changing with the falling bck); the old PCM5102 of
 #                this core (sim/ref) is run with it too and must fail: it changed din with the rising bck
@@ -18,6 +19,11 @@ iverilog -g2001 -Wall -Wno-timescale -o tb_hdmi_out.vvp "$SIM/tb_hdmi_out.v" "$S
 vvp -n tb_hdmi_out.vvp > tb_hdmi_out.log
 grep -E "ERROR|tb_hdmi_out:" tb_hdmi_out.log | head
 grep -q "tb_hdmi_out: 0 errors" tb_hdmi_out.log || fail=1
+
+iverilog -g2001 -Wall -Wno-timescale -o tb_audio_mixer.vvp "$SIM/tb_audio_mixer.v" "$SRC/rtl/sound/audio_mixer.v"
+vvp -n tb_audio_mixer.vvp > tb_audio_mixer.log
+grep -E "ERROR|tb_audio_mixer:" tb_audio_mixer.log | head
+grep -q "tb_audio_mixer: 0 errors" tb_audio_mixer.log || fail=1
 
 for div in 1 2; do
 	sed "s/DIV_BITS(1)/DIV_BITS($div)/; s/!= 8) begin/!= $((4 << div))) begin/; s/!= 256) begin/!= $((128 << div))) begin/" \
