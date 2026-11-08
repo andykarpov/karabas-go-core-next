@@ -522,6 +522,7 @@ architecture rtl of karabas_minig is
    -- zx next
    
    signal zxn_function_keys      : std_logic_vector(10 downto 1);
+   signal joy_reset              : std_logic := '0';
 	signal fn_keys						: std_logic_vector(12 downto 1);
    
    signal zxn_flashboot          : std_logic;
@@ -1793,7 +1794,17 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
    --  F9 = m1 button (multiface nmi)
    -- F10 = drive button (divmmc nmi)
 
-   zxn_function_keys <= fn_keys(10 downto 1);
+   -- A+B+C+START on either joystick = soft reset (F4), as the reset button of the upstream top
+
+   process (CLK_28)
+   begin
+      if rising_edge(CLK_28) then
+         joy_reset <= (zxn_joy_left(4) and zxn_joy_left(5) and zxn_joy_left(6) and zxn_joy_left(7)) or
+                      (zxn_joy_right(4) and zxn_joy_right(5) and zxn_joy_right(6) and zxn_joy_right(7));
+      end if;
+   end process;
+
+   zxn_function_keys <= fn_keys(10 downto 5) & (fn_keys(4) or joy_reset) & fn_keys(3 downto 1);
 --        kb_divmmc & 
 --       kb_multiface & 
 --        kb_cpu_speed & 
