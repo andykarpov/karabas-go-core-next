@@ -4065,7 +4065,7 @@ begin
       
       i_clk_trg      => ctc_zc_to(2 downto 0) & ctc_zc_to(3),
       
-      o_im2_vector_wr  => open,
+      o_vector_wr    => open,
       
       o_zc_to        => ctc_zc_to(3 downto 0),
       o_int_en       => ctc_int_en(3 downto 0)
