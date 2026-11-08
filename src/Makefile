@@ -31,7 +31,7 @@ JSON = core.json
 # one that works on these cores): on the Go, 1 left the router of the build of 2026-10-22 running for 47 minutes,
 # 2 routed it in 4 minutes with all constraints met. When a build misses a constraint by a placement, try another.
 MAP_T_go = 2
-MAP_T_mini = 2
+MAP_T_mini = 3
 MAP_T_minig = 2
 MAP_OPT = -logic_opt off -ol high -xe n -xt 0 -register_duplication off -r 4 -global_opt off -mt 2 -detail -ir off -pr b -lc off -power off
 PAR_OPT = -ol high -xe n -mt 4

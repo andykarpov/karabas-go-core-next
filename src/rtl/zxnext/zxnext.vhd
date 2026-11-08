@@ -161,6 +161,10 @@ entity zxnext is
       o_AUDIO_SPEAKER_EXCL : out std_logic;     -- only beeps go to speaker
       
       i_AUDIO_EAR          : in std_logic;      -- tape input
+      
+      o_AUDIO_PI_FE_EAR     : out std_logic;    -- tape audio from pi
+      o_AUDIO_ISSUE2_FE_MIC : out std_logic;    -- issue 2 mic bit
+      
       o_AUDIO_MIC          : out std_logic;     -- tape output
       o_AUDIO_EAR          : out std_logic;     -- beep output
 
@@ -755,10 +759,6 @@ architecture rtl of zxnext is
    
    signal sram_memcycle          : std_logic;
    signal sram_romcs             : std_logic;
-   
-   signal memcycle_complete      : std_logic;
-   signal memcycle_count         : std_logic_vector(2 downto 0);
-   signal memcycle_count_max     : std_logic_vector(2 downto 0);
 
    signal cpu_bank5_rd           : std_logic;
    signal cpu_bank5_we           : std_logic;
@@ -1629,6 +1629,9 @@ begin
    o_AUDIO_SPEAKER_EN <= nr_08_internal_speaker_en;
    o_AUDIO_SPEAKER_EXCL <= beep_spkr_excl;
 
+   o_AUDIO_PI_FE_EAR <= pi_fe_ear;
+   o_AUDIO_ISSUE2_FE_MIC <= port_fe_mic and nr_08_keyboard_issue2;
+   
    o_AUDIO_MIC <= beep_mic_final;
    o_AUDIO_EAR <= port_fe_ear;
 
@@ -2973,6 +2976,7 @@ begin
 
          if cpu_mreq_n = '1' then
          
+            sram_pre_romcs_n <= i_BUS_ROMCS_n and expbus_eff_en and not expbus_eff_disable_mem;
             sram_pre_romcs_replace <= expbus_romcs_replace;
          
             sram_pre_alt_en <= nr_8c_altrom_en;
@@ -3092,56 +3096,13 @@ begin
    -- divmmc automap disabled for most entry points if rom3 is not present
    
    sram_divmmc_automap_en <= sram_pre_override(2);
-   sram_divmmc_automap_rom3_en <= memcycle_complete and sram_pre_override(2) and sram_pre_override(0) and (not sram_layer2_map_en) and (not sram_romcs) and ((sram_altrom_en and sram_pre_alt_128_n) or (sram_pre_rom3 and not sram_altrom_en));
+   sram_divmmc_automap_rom3_en <= sram_pre_override(2) and sram_pre_override(0) and (not sram_layer2_map_en) and (not sram_romcs) and ((sram_altrom_en and sram_pre_alt_128_n) or (sram_pre_rom3 and not sram_altrom_en));
 
    --
    -- generate memory cycle
    --
    
-   sram_memcycle <= '1' when cpu_mreq_n = '0' and cpu_rfsh_n = '1' and memcycle_complete = '1' else '0';
-   
-   -- memory cycle may go to expansion bus if the lower 16K is accessed and romcs is active
-   -- memory read of internal memory is harmless with cpu_di taken from internal memory or expansion bus depending on romcs at the end of the read cycle
-   -- memory write is potentially harmful however a write cycle gives much more time for romcs to be asserted so is fine to act on when /wr goes low
-
-   -- memory cycle is delayed to allow time for romcs from slow devices (divmmc)
-
-   memcycle_complete <= '1' when memcycle_count = memcycle_count_max else '0';
-   
-   process (i_CLK_28_n)
-   begin
---    if falling_edge(i_CLK_28) then    -- xst bug: creates rising edge flip flop with clock passed through inverter which generates a synthesis error
-      if rising_edge(i_CLK_28_n) then   -- temporary fix but the builds aren't as good, see if it goes away later
-         if cpu_mreq_n = '1' then
-            memcycle_count <= (others => '0');
-         elsif memcycle_complete = '0' then
-            memcycle_count <= memcycle_count + 1;
-         end if;
-      end if;
-   end process;
-
-   process (cpu_speed)
-   begin
-      case cpu_speed is
-         when "00"   =>
-            memcycle_count_max <= "111";   -- before wr goes low
-         when "01"   =>
-            memcycle_count_max <= "011";
-         when "10" =>
-            memcycle_count_max <= "001";
-         when others =>
-            memcycle_count_max <= (others => '0');
-      end case;
-   end process;
-   
-   process (i_CLK_28)
-   begin
-      if falling_edge(i_CLK_28) then
-         if cpu_mreq_n = '1' or memcycle_complete = '0' then
-            sram_pre_romcs_n <= i_BUS_ROMCS_n and expbus_eff_en and not expbus_eff_disable_mem;
-         end if;
-      end if;
-   end process;
+   sram_memcycle <= '1' when cpu_mreq_n = '0' and cpu_rfsh_n = '1' else '0';
    
    -- memory signals
    
@@ -3455,7 +3416,7 @@ begin
    begin
       if falling_edge(i_CLK_CPU) then
          if expbus_eff_en = '0' or port_propagate_fe = '0' or port_fe_override = '0' then
-            port_fe_dat_0 <= '1' & ((i_AUDIO_EAR xor pi_fe_ear) or (port_fe_ear or (port_fe_mic and nr_08_keyboard_issue2))) & '1' & i_KBD_COL;
+            port_fe_dat_0 <= '1' & (i_AUDIO_EAR or port_fe_ear) & '1' & i_KBD_COL;  -- i_AUDIO_EAR includes pi_fe_ear and issue 2 mic
          else
             port_fe_dat_0 <= X"FF";
          end if;
@@ -4065,7 +4026,7 @@ begin
       
       i_clk_trg      => ctc_zc_to(2 downto 0) & ctc_zc_to(3),
       
-      o_im2_vector_wr  => open,
+      o_vector_wr    => open,
       
       o_zc_to        => ctc_zc_to(3 downto 0),
       o_int_en       => ctc_int_en(3 downto 0)
@@ -6468,7 +6429,7 @@ begin
    -- todo: switch to signed audio
    -- todo: power of two volume adjustment on all inputs (?)
    
-   beep_mic_final <= port_fe_mic xor i_AUDIO_EAR xor pi_fe_ear;
+   beep_mic_final <= i_AUDIO_EAR xor (port_fe_mic and nr_08_keyboard_issue2) xor port_fe_mic;
    beep_spkr_excl <= nr_06_internal_speaker_beep and nr_08_internal_speaker_en;
    
 	audio_mixer_mod_custom: entity work.audio_mixer

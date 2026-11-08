@@ -48,7 +48,7 @@ entity karabas_go is
       g_machine_id      : unsigned(7 downto 0)  := X"0A";   -- X"0A" = ZX Spectrum Next, X"FA" = Anti Brick (reset disabled, bootrom)
       g_video_def       : unsigned(2 downto 0)  := "000";   -- video mode default (0-6, vga-0 & vga-1 produce hdmi if hdmi module is included)
       g_version         : unsigned(7 downto 0)  := X"32";   -- 3.02
-      g_sub_version     : unsigned(7 downto 0)  := X"01";   -- .01
+      g_sub_version     : unsigned(7 downto 0)  := X"02";   -- .02
       g_board_issue     : unsigned(3 downto 0)  := X"0";    -- issue 2 (see nextreg 0x0F)
       g_video_inc       : unsigned(1 downto 0)  := "01"     -- bit 1 = 1 to include HDMI module, bit 0 = 1 to include VGA module (if changed see zxnext_pins_issue2.ucf)
    );
@@ -214,6 +214,8 @@ architecture rtl of karabas_go is
    signal ear_port_i_q           : std_logic;
    signal ear_port_i_qq          : std_logic;
    signal ear_port_i_qqq         : std_logic;
+   signal zxn_pi_fe_ear          : std_logic;
+   signal zxn_issue2_fe_mic      : std_logic;
    
    signal bus_data_i_q           : std_logic_vector(7 downto 0);
    signal bus_int_n_i_q          : std_logic := '1';
@@ -503,6 +505,7 @@ architecture rtl of karabas_go is
    -- zx next
    
    signal zxn_function_keys      : std_logic_vector(10 downto 1);
+   signal joy_reset              : std_logic := '0';
    
    signal zxn_flashboot          : std_logic;
    signal zxn_coreid             : std_logic_vector(4 downto 0);
@@ -612,10 +615,16 @@ begin
    --    unaffected frequency of 500 Hz at 50% duty.  Affected frequencies will see
    --    the duration of a high pulse reduced.
 
+   --    The issue 2 mic circuit presents another challenge in that a set mic bit
+   --    causes the ear bit to read back as 1.  But this must not interfere with
+   --    tape loading; in the original circuit a driven 0 from the tape deck will
+   --    override the 1 read back due to the mic bit.  So we also relax a steady
+   --    0 to 1 after 1000 us when the issue 2 mic bit is set.
+
    -- Since the input is inverted, the goal is to change a 0 to 1 after 1000 us.
    -- Invert the result here so that proper polarity is delivered to zx next module.
    
-   ear_relax : entity work.relaxation
+   ear_relax : entity work.symmetric_relaxation
    generic map
    (
       INVERT         => '1',
@@ -626,7 +635,9 @@ begin
    (
       i_CLK          => CLK_28,
       i_CLK_EN       => CLK_28_MEMBRANE_EN,   -- 0.018 ms
-      i_sig          => ear_port_i_qq,
+      i_sig          => ear_port_i_qq xor not zxn_pi_fe_ear,
+      i_relax_0      => zxn_issue2_fe_mic,
+      i_relax_1      => zxn_issue2_fe_mic,
       o_sig          => ear_port_i_qqq
    );	
 
@@ -1641,7 +1652,17 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
    --  F9 = m1 button (multiface nmi)
    -- F10 = drive button (divmmc nmi)
 
-   zxn_function_keys <= fn_keys(10 downto 1);
+   -- A+B+C+START on either joystick = soft reset (F4), as the reset button of the upstream top
+
+   process (CLK_28)
+   begin
+      if rising_edge(CLK_28) then
+         joy_reset <= (zxn_joy_left(4) and zxn_joy_left(5) and zxn_joy_left(6) and zxn_joy_left(7)) or
+                      (zxn_joy_right(4) and zxn_joy_right(5) and zxn_joy_right(6) and zxn_joy_right(7));
+      end if;
+   end process;
+
+   zxn_function_keys <= fn_keys(10 downto 5) & (fn_keys(4) or joy_reset) & fn_keys(3 downto 1);
 --        kb_divmmc & 
 --        kb_multiface & 
 --        kb_cpu_speed & 
@@ -1789,6 +1810,8 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
       o_AUDIO_SPEAKER_EXCL => zxn_speaker_excl,
       
       i_AUDIO_EAR          => ear_port_i_qqq,
+      o_AUDIO_PI_FE_EAR     => zxn_pi_fe_ear,
+      o_AUDIO_ISSUE2_FE_MIC => zxn_issue2_fe_mic,
       o_AUDIO_MIC          => zxn_audio_mic,
       o_AUDIO_EAR          => zxn_audio_ear,
 

@@ -588,11 +588,11 @@ begin
    begin
       if rising_edge(i_CLK_CPU) then
          mreq23_n <= i_cpu_mreq_n;
-         ioreqtw3_n <= i_cpu_iorq_n;
+         ioreqtw3_n <= i_cpu_iorq_n or not i_contention_port;
       end if;
    end process;
 
-   o_cpu_contend <= '1' when ((i_contention_memory = '1' and mreq23_n = '1') or (i_contention_port = '1' and i_cpu_iorq_n = '0' and ioreqtw3_n = '1')) and i_timing_p3 = '0' and wait_s = '1' else '0';
+   o_cpu_contend <= '1' when ((i_contention_memory = '1' and mreq23_n = '1' and ioreqtw3_n = '1') or (i_contention_port = '1' and i_cpu_iorq_n = '0' and ioreqtw3_n = '1')) and i_timing_p3 = '0' and wait_s = '1' else '0';
    
    -- +3
 
