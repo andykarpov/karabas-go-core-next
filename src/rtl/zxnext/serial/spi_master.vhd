@@ -59,6 +59,7 @@ end entity;
 
 architecture rtl of spi_master is
 
+   signal spi_active       : std_logic := '0';
    signal spi_begin        : std_logic;
    
    signal state_last       : std_logic;
@@ -78,8 +79,21 @@ begin
    -- CPOL = 0, CPHA = 0
 
    -- spi transaction begin
-   
-   spi_begin <= '1' when (state_last = '1' or state_idle = '1') and (i_spi_rd = '1' or i_spi_wr = '1') else '0';
+
+   process (i_CLK)
+   begin
+      if rising_edge(i_CLK) then
+         if i_reset = '1' then
+            spi_active <= '0';
+         elsif spi_begin = '1' then
+            spi_active <= '1';
+         else
+            spi_active <= spi_active and (i_spi_rd or i_spi_wr);
+         end if;
+      end if;
+   end process;
+
+   spi_begin <= '1' when (state_last = '1' or state_idle = '1') and (i_spi_rd = '1' or i_spi_wr = '1') and (spi_active = '0') else '0';
    
    -- state counter for one byte transfer
    
