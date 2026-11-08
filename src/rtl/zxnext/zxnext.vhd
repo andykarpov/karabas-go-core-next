@@ -161,6 +161,10 @@ entity zxnext is
       o_AUDIO_SPEAKER_EXCL : out std_logic;     -- only beeps go to speaker
       
       i_AUDIO_EAR          : in std_logic;      -- tape input
+      
+      o_AUDIO_PI_FE_EAR     : out std_logic;    -- tape audio from pi
+      o_AUDIO_ISSUE2_FE_MIC : out std_logic;    -- issue 2 mic bit
+      
       o_AUDIO_MIC          : out std_logic;     -- tape output
       o_AUDIO_EAR          : out std_logic;     -- beep output
 
@@ -1625,6 +1629,9 @@ begin
    o_AUDIO_SPEAKER_EN <= nr_08_internal_speaker_en;
    o_AUDIO_SPEAKER_EXCL <= beep_spkr_excl;
 
+   o_AUDIO_PI_FE_EAR <= pi_fe_ear;
+   o_AUDIO_ISSUE2_FE_MIC <= port_fe_mic and nr_08_keyboard_issue2;
+   
    o_AUDIO_MIC <= beep_mic_final;
    o_AUDIO_EAR <= port_fe_ear;
 
@@ -3409,7 +3416,7 @@ begin
    begin
       if falling_edge(i_CLK_CPU) then
          if expbus_eff_en = '0' or port_propagate_fe = '0' or port_fe_override = '0' then
-            port_fe_dat_0 <= '1' & ((i_AUDIO_EAR xor pi_fe_ear) or (port_fe_ear or (port_fe_mic and nr_08_keyboard_issue2))) & '1' & i_KBD_COL;
+            port_fe_dat_0 <= '1' & (i_AUDIO_EAR or port_fe_ear) & '1' & i_KBD_COL;  -- i_AUDIO_EAR includes pi_fe_ear and issue 2 mic
          else
             port_fe_dat_0 <= X"FF";
          end if;
@@ -6422,7 +6429,7 @@ begin
    -- todo: switch to signed audio
    -- todo: power of two volume adjustment on all inputs (?)
    
-   beep_mic_final <= port_fe_mic xor i_AUDIO_EAR xor pi_fe_ear;
+   beep_mic_final <= i_AUDIO_EAR xor (port_fe_mic and nr_08_keyboard_issue2) xor port_fe_mic;
    beep_spkr_excl <= nr_06_internal_speaker_beep and nr_08_internal_speaker_en;
    
 	audio_mixer_mod_custom: entity work.audio_mixer

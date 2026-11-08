@@ -209,6 +209,8 @@ architecture rtl of karabas_minig is
    signal ear_port_i_q           : std_logic;
    signal ear_port_i_qq          : std_logic;
    signal ear_port_i_qqq         : std_logic;
+   signal zxn_pi_fe_ear          : std_logic;
+   signal zxn_issue2_fe_mic      : std_logic;
    
    signal bus_data_i_q           : std_logic_vector(7 downto 0);
    signal bus_int_n_i_q          : std_logic := '1';
@@ -641,10 +643,16 @@ begin
    --    unaffected frequency of 500 Hz at 50% duty.  Affected frequencies will see
    --    the duration of a high pulse reduced.
 
+   --    The issue 2 mic circuit presents another challenge in that a set mic bit
+   --    causes the ear bit to read back as 1.  But this must not interfere with
+   --    tape loading; in the original circuit a driven 0 from the tape deck will
+   --    override the 1 read back due to the mic bit.  So we also relax a steady
+   --    0 to 1 after 1000 us when the issue 2 mic bit is set.
+
    -- Since the input is inverted, the goal is to change a 0 to 1 after 1000 us.
    -- Invert the result here so that proper polarity is delivered to zx next module.
    
-   ear_relax : entity work.relaxation
+   ear_relax : entity work.symmetric_relaxation
    generic map
    (
       INVERT         => '1',
@@ -655,7 +663,9 @@ begin
    (
       i_CLK          => CLK_28,
       i_CLK_EN       => CLK_28_MEMBRANE_EN,   -- 0.018 ms
-      i_sig          => ear_port_i_qq,
+      i_sig          => ear_port_i_qq xor not zxn_pi_fe_ear,
+      i_relax_0      => zxn_issue2_fe_mic,
+      i_relax_1      => zxn_issue2_fe_mic,
       o_sig          => ear_port_i_qqq
    );	
 
@@ -1932,6 +1942,8 @@ zxn_buttons <= (kb_buttons(1) or fn_keys(10)) & (kb_buttons(0) or fn_keys(9));
       o_AUDIO_SPEAKER_EXCL => zxn_speaker_excl,
       
       i_AUDIO_EAR          => ear_port_i_qqq,
+      o_AUDIO_PI_FE_EAR     => zxn_pi_fe_ear,
+      o_AUDIO_ISSUE2_FE_MIC => zxn_issue2_fe_mic,
       o_AUDIO_MIC          => zxn_audio_mic,
       o_AUDIO_EAR          => zxn_audio_ear,
 
