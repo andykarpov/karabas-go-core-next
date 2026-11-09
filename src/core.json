@@ -8,8 +8,8 @@
     "rtc_mode": 1,
     "roms": [],
     "boards": {
-        "go": {"build": "26110822", "bitstream": "karabas_go.bin"},
-        "mini": {"build": "26110823", "bitstream": "karabas_mini.bin"},
+        "go": {"build": "26110900", "bitstream": "karabas_go.bin"},
+        "mini": {"build": "26110900", "bitstream": "karabas_mini.bin"},
         "minig": {"build": "26110900", "bitstream": "karabas_minig.bin", "spi_freq": 8}
     },
     "osd": [
