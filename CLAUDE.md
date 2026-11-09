@@ -26,7 +26,7 @@ The board modules (MCU link, memories, clocks, DACs, HDMI) come from the git sub
 
 - `src/sim/run_mcu_sim.sh` (ISim): `tb_mcu_next`, `kg_mcu` with the parameters of the tops against the old `mcu.vhd` (`sim/ref`, the coregen queue / rtc models in `sim/ref/ipcore`): frames of every command, the rtc registers both ways, the matrix and flashboot words, the mouse through `kg_cursor` against a model (the old link moved it twice per report).
 - `src/sim/run_hdmi_sim.sh` (ISim): `tb_hdmi_pll`, the pixel clock of each frame type against the old hdmi_pll.
-- `src/sim/run_eq_sim.sh` (iverilog): `tb_hdmi_out` (what reaches zhdmi), the I2S of `kg_pcm5102` (the old PCM5102 must fail it).
+- `src/sim/run_eq_sim.sh` (iverilog): `tb_hdmi_out` (what reaches zhdmi), `tb_audio_mixer` (EAR and MIC held at 1 leave no constant level), the I2S of `kg_pcm5102` (the old PCM5102 must fail it).
 - Each prints `<tb>: 0 errors`. The tests of the shared modules are in `modules/sim` (`run_all.sh`; `sim/ipcore_eq` compares the kg_* memories with the coregen models in `src/sim/ref/ipcore` of this core).
 
 ## Layout
