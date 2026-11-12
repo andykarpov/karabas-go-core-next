@@ -10,7 +10,7 @@
     "boards": {
         "go": {"build": "26110900", "bitstream": "karabas_go.bin"},
         "mini": {"build": "26110900", "bitstream": "karabas_mini.bin"},
-        "minig": {"build": "26110900", "bitstream": "karabas_minig.bin", "spi_freq": 8}
+        "minig": {"link": 2, "type": "osd", "build": "26111201", "bitstream": "karabas_minig.bin", "spi_freq": 8}
     },
     "osd": [
     {"type": "T", "bits": 1, "name": "Hard Reset", "options": null, "default": 0, "hotkey": "F1"},

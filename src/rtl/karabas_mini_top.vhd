@@ -395,6 +395,7 @@ architecture rtl of karabas_mini is
    signal hdmi_max_vc            : unsigned(9 downto 0);
    
    signal toHDMI_rgb             : std_logic_vector(8 downto 0);
+   signal toHDMI_rgb24           : std_logic_vector(23 downto 0);
    signal toHDMI_hsync           : std_logic;
    signal toHDMI_vsync           : std_logic;
    signal toHDMI_blank           : std_logic;
@@ -1576,6 +1577,11 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
 		
       -- karabas: zhdmi (hdmi_tx of karabas-go-modules) in place of the hdmi encoder of the ZX Next,
       -- DVI when the HDMI audio is off (nextreg 08) or the mcu set DVI_ONLY, see rtl/hdmi/hdmi_out.v
+      -- the 9-bit colour to 24 bits as the old encoder did: RRR -> RRRRRRRR (RRR RRR RR)
+      toHDMI_rgb24 <= toHDMI_rgb(8 downto 6) & toHDMI_rgb(8 downto 6) & toHDMI_rgb(8 downto 7) &
+                      toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 4) &
+                      toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 1);
+
       hdmi: entity work.hdmi_out
       generic map
       (
@@ -1595,7 +1601,7 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
          clk_x5_n       => CLK_HDMIx5_n,
          pix_valid      => clk_hdmi_valid,
 
-         rgb            => toHDMI_rgb,
+         rgb            => toHDMI_rgb24,
          hsync_n        => toHDMI_hsync,
          vsync_n        => toHDMI_vsync,
          blank          => toHDMI_blank,

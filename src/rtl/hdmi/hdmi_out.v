@@ -32,7 +32,7 @@ module hdmi_out #(
 	input wire clk_x5_n,
 	input wire pix_valid,       // the pixel clocks run (low resets hdmi_tx)
 
-	input wire [8:0] rgb,       // RRRGGGBBB, clk_pix
+	input wire [23:0] rgb,      // 8 bits per colour (the tops widen the RRRGGGBBB of hdmi_frame), clk_pix
 	input wire hsync_n,
 	input wire vsync_n,
 	input wire blank,
@@ -75,15 +75,12 @@ always @(posedge clk_pix) begin
 	end
 end
 
-// the 9-bit colour to 24 bits as the old encoder did: RRR -> RRRRRRRR (RRR RRR RR)
-wire [23:0] rgb24 = {rgb[8:6], rgb[8:6], rgb[8:7], rgb[5:3], rgb[5:3], rgb[5:4], rgb[2:0], rgb[2:0], rgb[2:1]};
-
 hdmi_tx #(.SAMPLE_FREQ(SAMPLERATE)) hdmi_tx(
 	.clk(clk_pix),
 	.sclk(clk_x5),
 	.sclk_n(clk_x5_n),
 	.reset(~pix_valid),
-	.rgb(rgb24),
+	.rgb(rgb),
 	.vsync(vsync_n),
 	.hsync(hsync_n),
 	.de(~blank),
