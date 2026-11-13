@@ -122,7 +122,8 @@ entity karabas_mini is
 		MCU_SCK 				: in  	STD_LOGIC;
 		MCU_MOSI 			: in  	STD_LOGIC;
 		MCU_MISO 			: out  	STD_LOGIC;
-		MCU_IO 				: in 		std_logic_vector(4 downto 0);
+		MCU_IO 				: inout 	std_logic_vector(3 downto 0);   -- [1] INT of link v2, [2] sd2 cs_n, [3] ft cs_n
+		FT_CLK_OUT			: out		std_logic;                      -- E7 (MCU_IO<4> before): the clock of the FT812
 			  
 		MIDI_TX 				: out 	std_logic;
 		MIDI_CLK 			: out 	std_logic;
@@ -396,6 +397,8 @@ architecture rtl of karabas_mini is
    
    signal toHDMI_rgb             : std_logic_vector(8 downto 0);
    signal toHDMI_rgb24           : std_logic_vector(23 downto 0);
+   signal osd_rgb                : std_logic_vector(23 downto 0);
+   signal osd_hs, osd_vs, osd_de : std_logic;
    signal toHDMI_hsync           : std_logic;
    signal toHDMI_vsync           : std_logic;
    signal toHDMI_blank           : std_logic;
@@ -535,6 +538,26 @@ architecture rtl of karabas_mini is
 	-- Triggers
 	signal kb_buttons					: std_logic_vector(1 downto 0) := (others => '0');
 	signal fn_keys						: std_logic_vector(12 downto 1);
+	signal fn_all						: std_logic_vector(12 downto 1);
+	-- link v2 (kg_mcu2)
+	signal mcu_int						: std_logic;
+	signal reload_core				: std_logic_vector(7 downto 0);
+	signal sw_regs						: std_logic_vector(8*8-1 downto 0);
+	signal mcu_kbd						: std_logic_vector(55 downto 0);
+	signal mcu_joy_l, mcu_joy_r	: std_logic_vector(15 downto 0);
+	signal mcu_btns					: std_logic_vector(5 downto 0);
+	signal mcu_ms_z, mcu_ms_b		: std_logic_vector(7 downto 0);
+	signal mcu_ms_wr					: std_logic;
+	signal ms_upd_t					: std_logic := '0';
+	signal osd_wr, osd_en, osd_zoom : std_logic;
+	signal osd_waddr					: std_logic_vector(11 downto 0);
+	signal osd_wdata					: std_logic_vector(7 downto 0);
+	signal osd_fg, osd_bg			: std_logic_vector(23 downto 0);
+	signal osd_alpha, osd_place	: std_logic_vector(1 downto 0);
+	signal osd_px, osd_ph			: std_logic_vector(4 downto 0);
+	signal osd_py						: std_logic_vector(3 downto 0);
+	signal osd_pw						: std_logic_vector(5 downto 0);
+	signal port_cfg					: std_logic_vector(127 downto 0) := (others => '0');
 
 	-- Mouse
 	signal ms_x							: std_logic_vector(7 downto 0);
@@ -1582,6 +1605,37 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
                       toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 3) & toHDMI_rgb(5 downto 4) &
                       toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 0) & toHDMI_rgb(2 downto 1);
 
+      overlay: entity work.kg_l2_osd_overlay
+      port map
+      (
+         wclk           => CLK_28,
+         osd_wr         => osd_wr,
+         osd_waddr      => osd_waddr,
+         osd_wdata      => osd_wdata,
+         osd_en         => osd_en,
+         osd_fg         => osd_fg,
+         osd_bg         => osd_bg,
+         osd_alpha      => osd_alpha,
+         osd_px         => osd_px,
+         osd_py         => osd_py,
+         osd_pw         => osd_pw,
+         osd_ph         => osd_ph,
+         osd_place      => osd_place,
+         osd_zoom       => osd_zoom,
+         icon_on        => x"00",
+         icon_act       => x"00",
+
+         clk            => CLK_HDMI,
+         rgb_i          => toHDMI_rgb24,
+         hs_i           => not toHDMI_hsync,
+         vs_i           => not toHDMI_vsync,
+         de_i           => not toHDMI_blank,
+         rgb_o          => osd_rgb,
+         hs_o           => osd_hs,
+         vs_o           => osd_vs,
+         de_o           => osd_de
+      );
+
       hdmi: entity work.hdmi_out
       generic map
       (
@@ -1601,10 +1655,10 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
          clk_x5_n       => CLK_HDMIx5_n,
          pix_valid      => clk_hdmi_valid,
 
-         rgb            => toHDMI_rgb24,
-         hsync_n        => toHDMI_hsync,
-         vsync_n        => toHDMI_vsync,
-         blank          => toHDMI_blank,
+         rgb            => osd_rgb,
+         hsync_n        => not osd_hs,
+         vsync_n        => not osd_vs,
+         blank          => not osd_de,
 
          tmds_p         => TMDS_P,
          tmds_n         => TMDS_N
@@ -1847,7 +1901,7 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
       end if;
    end process;
 
-   zxn_function_keys <= fn_keys(10 downto 5) & (fn_keys(4) or joy_reset) & fn_keys(3 downto 1);
+   zxn_function_keys <= fn_all(10 downto 5) & (fn_all(4) or joy_reset) & fn_all(3 downto 1);
 --        kb_divmmc & 
 --        kb_multiface & 
 --        kb_cpu_speed & 
@@ -1859,7 +1913,7 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
 --        kb_hard_reset;
 
    --zxn_buttons <= "00"; -- kb_divmmc & kb_multiface;
-	zxn_buttons <= (kb_buttons(1) or fn_keys(10)) & (kb_buttons(0) or fn_keys(9));
+	zxn_buttons <= (kb_buttons(1) or fn_all(10)) & (kb_buttons(0) or fn_all(9));
       
    zxnext : entity work.zxnext
    generic map
@@ -2093,90 +2147,141 @@ gen_vga_1: if (g_video_inc(0) = '1') generate
 
 -- MCU (karabas-go-modules kg_mcu: the link fixes of nanomig, a chip select filter of 3 clocks; the rtc
 -- registers as mcu.vhd of this core sent them, all to the mcu; no burst, ft, sd2: the core loads no rom)
-U_MCU: entity work.kg_mcu
+MCU_IO(1) <= mcu_int;
+MCU_IO(0) <= 'Z';
+MCU_IO(3 downto 2) <= (others => 'Z');
+
+U_MCU: entity work.kg_mcu2
 generic map(
-	BURST_MAX_MHZ		=> 0,
-	CS_FILTER			=> 3,
-	ENABLE_RTC			=> 1,
-	RTC_SKIP_0D			=> 0,
-	RTC_SEND_LIMIT		=> 256,
-	ENABLE_UART			=> 0,
-	ENABLE_MATRIX		=> 0,
-	ENABLE_DEBUG		=> 0,
-	ENABLE_IMG			=> 0,
-	ENABLE_FILE			=> 0,
-	ENABLE_FT			=> 0,
-	ENABLE_SD2			=> 0,
-	ENABLE_ESP			=> 0,
-	ENABLE_FLASHBOOT	=> 1
+	CAPS => x"0000",
+	SW_N => 8,
+	CS_FILTER => 3,
+	ENABLE_OSD => 1,
+	ENABLE_IMG => 0,
+	ENABLE_PORTS => "0000",
+	ENABLE_RTC => 1,
+	RTC_SKIP_0D => 0,
+	RTC_SEND_LIMIT => 256,
+	ENABLE_AUX => 1,
+	ENABLE_FT => 0,
+	ENABLE_SD2 => 0
 )
 port map(
-	CLK => clk_28,
+	CLK => CLK_28,
 	N_RESET => not areset,
-
+	MCU_SCK => MCU_SCK,   -- not on a clock pin on this board
 	MCU_MOSI => MCU_MOSI,
 	MCU_MISO => MCU_MISO,
-	MCU_SCK => MCU_SCK,
 	MCU_SS => MCU_CS_N,
+	MCU_INT => mcu_int,
 	MCU_SPI_FT_SS => '1',
 	MCU_SPI_SD2_SS => '1',
-	MCU_BURST_CS_N => '1',
-	MCU_BURST_READY => open,
 
-	MS_X => hid_ms_x,
-	MS_Y => hid_ms_y,
-	MS_Z => hid_ms_z,
-	MS_B => hid_ms_b,
-	MS_UPD => hid_ms_upd,
+	SW => sw_regs,
+	SW_WR => open, SW_INDEX => open, SW_VALUE => open,
+	HW_ID => hwid,
+	DVI_ONLY => dvi_only,
+	CORE_BUILD => open, FW_BUILD => open,
+	BUSY => mcu_busy,
+	BTNS => mcu_btns,
+	RELOAD_REQ => flashboot_start,
+	RELOAD_CORE => reload_core,
 
-	KB_STATUS => hid_kb_status,
-	KB_DAT0 => hid_kb_dat0,
-	KB_DAT1 => hid_kb_dat1,
-	KB_DAT2 => hid_kb_dat2,
-	KB_DAT3 => hid_kb_dat3,
-	KB_DAT4 => hid_kb_dat4,
-	KB_DAT5 => hid_kb_dat5,
+	KBD => mcu_kbd, KBD_WR => open,
+	PS2_CODE => open, PS2_KIND => open, PS2_WR => open,
+	MS_X => hid_ms_x, MS_Y => hid_ms_y, MS_Z => mcu_ms_z, MS_B => mcu_ms_b, MS_WR => mcu_ms_wr,
+	JOY_L => mcu_joy_l, JOY_R => mcu_joy_r, JOY_WR => open,
+	PS2_CMD => x"0000", PS2_CMD_WR => '0',
 
-	JOY_L => joy_l,
-	JOY_R => joy_r,
+	LD_KIND => open, LD_SLOT => open, LD_SIZE => open, LD_START => open,
+	LD_ACTIVE => open, LD_END => open, LD_ADDR => open, LD_DATA => open,
+	LD_WR => open, LD_READY => '1',
 
-	BTNS => kb_buttons,
+	OSD_WR => osd_wr, OSD_WADDR => osd_waddr, OSD_WDATA => osd_wdata, OSD_EN => osd_en,
+	OSD_FG => osd_fg, OSD_BG => osd_bg, OSD_ALPHA => osd_alpha, OSD_PX => osd_px,
+	OSD_PY => osd_py, OSD_PW => osd_pw, OSD_PH => osd_ph, OSD_PLACE => osd_place,
+	OSD_ZOOM => osd_zoom,
+
+	SDC_IMG_MOUNTED => open, SDC_IMG_SIZE => open,
+	SDC_RD => x"00", SDC_WR => x"00", SDC_SECTOR => x"00000000",
+	SDC_BUSY => open, SDC_DONE => open, SDC_ERROR => open, SDC_SLOT => open,
+	SDC_BYTE_IN_STROBE => open, SDC_BYTE_ADDR => open,
+	SDC_BYTE_IN_DATA => open, SDC_BYTE_OUT_DATA => x"00",
+	IMG_WP => open, IMG_PHYS_WR => open, IMG_PHYS => open, IMG_FLUSH => open,
+	FDD_CHNG_WR => open, FDD_CHNG => open, FDD_CHNG_REQ => '0', FDD_CHNG_DS => "00",
+	IMG_ACTIVE => open,
+
+	PORT_OUT_DATA => open, PORT_OUT_WR => open, PORT_OUT_READY => "1111",
+	PORT_IN_DATA => x"00000000", PORT_IN_WR => "0000",
+	PORT_IN_FULL => open, PORT_CFG => port_cfg, PORT_STAT => open, PORT_STAT_WR => open,
 
 	RTC_A => mcu_rtc_a,
 	RTC_DI => rtc_di,
-	RTC_DO => rtc_do,
 	RTC_CS => '1',
 	RTC_WR_N => mcu_rtc_wr_n,
-
-	UART_TX_DATA => x"00",
-	UART_TX_WR => '0',
-	UART_TX_MODE => '0',
-	UART_DLM => x"00",
-	UART_DLL => x"00",
-	UART_DLM_WR => '0',
-	UART_DLL_WR => '0',
-
-	FT_MISO => '1',
-	SD2_MISO => '1',
-
-	MATRIX_CMD => x"000000",
+	MATRIX_CMD => x"000000",   -- no LED matrix on this board
 	MATRIX_CMD_WR => '0',
 	DEBUG_ADDR => x"0000",
 	DEBUG_DATA => x"0000",
+	RTC_DO => rtc_do,
 
-	IMG_Q_WR => '0',
-	IMG_Q_DI => x"000000",
+	FT_SPI_ON => open, FT_VGA_ON => open, FT_RESET => open, FT_SCK => open, FT_MOSI => open,
+	FT_MISO => '1', FT_CS_N => open,
+	SD2_SCK => open, SD2_MOSI => open, SD2_MISO => '1', SD2_CS_N => open
+);
 
-	ESP_UART_RX_DATA => x"00",
-	ESP_UART_RX_WR => '0',
+reload_core <= "000" & flashboot_coreid;
+hid_kb_status <= mcu_kbd(7 downto 0);
+hid_kb_dat0 <= mcu_kbd(15 downto 8);
+hid_kb_dat1 <= mcu_kbd(23 downto 16);
+hid_kb_dat2 <= mcu_kbd(31 downto 24);
+hid_kb_dat3 <= mcu_kbd(39 downto 32);
+hid_kb_dat4 <= mcu_kbd(47 downto 40);
+hid_kb_dat5 <= mcu_kbd(55 downto 48);
+joy_l <= mcu_joy_l(12 downto 0);
+joy_r <= mcu_joy_r(12 downto 0);
+kb_buttons <= mcu_btns(1 downto 0);
+hid_ms_z <= mcu_ms_z(3 downto 0);
+hid_ms_b <= mcu_ms_b(2 downto 0);
+hid_ms_upd <= ms_upd_t;
 
-	FLASHBOOT_START => flashboot_start,
-	FLASHBOOT_COREID => flashboot_coreid,
+-- the mouse of v1: a toggle per report
+process (CLK_28)
+begin
+	if rising_edge(CLK_28) then
+		if mcu_ms_wr = '1' then
+			ms_upd_t <= not ms_upd_t;
+		end if;
+	end if;
+end process;
 
-	HWID => hwid,
-	DVI_ONLY => dvi_only,
-	
-	BUSY => mcu_busy
+-- the function keys: the eight of the OSD (core.json, in this order: Hard Reset F1, Scandoubler F2,
+-- 50 / 60 Hz F3, Soft Reset F4, Scanlines F7, CPU Speed F8, Multiface F9, DivMMC F10) are its triggers
+-- (100 ms pulses), for the menu and for their hotkeys alike: the firmware sends the trigger on the hotkey
+-- and passes the key on too, so these keys of the keyboard are not taken again (two presses would toggle
+-- back). F5, F6, F11, F12 come from the keyboard.
+fn_all(1) <= sw_regs(0);
+fn_all(2) <= sw_regs(8);
+fn_all(3) <= sw_regs(16);
+fn_all(4) <= sw_regs(24);
+fn_all(6 downto 5) <= fn_keys(6 downto 5);
+fn_all(7) <= sw_regs(32);
+fn_all(8) <= sw_regs(40);
+fn_all(9) <= sw_regs(48);
+fn_all(10) <= sw_regs(56);
+fn_all(12 downto 11) <= fn_keys(12 downto 11);
+
+-- FT_CLK_OUT: the FT812 must always have its clock (~8 MHz, else it hums into the audio): 7 MHz
+ODDR2_FT_CLK: ODDR2
+port map(
+	Q => FT_CLK_OUT,
+	C0 => CLK_7,
+	C1 => not(CLK_7),
+	CE => '1',
+	D0 => '1',
+	D1 => '0',
+	R => '0',
+	S => '0'
 );
 
 mcu_rtc_a <= "00" & rtc_a(5 downto 0);
