@@ -590,6 +590,11 @@ architecture rtl of karabas_go is
 	signal clk_12 						: std_logic := '0';
 	signal clk_12_n 					: std_logic := '1';
 
+	-- dot matrix (on the I2C of the RP2040: any board can have it)
+	signal matrix_cmd : std_logic_vector(23 downto 0);
+	signal matrix_cmd_wr : std_logic := '0';
+	signal iowr : std_logic := '0';
+
 begin
 
    ------------------------------------------------------------
@@ -2037,8 +2042,8 @@ port map(
 	RTC_DI => rtc_di,
 	RTC_CS => '1',
 	RTC_WR_N => mcu_rtc_wr_n,
-	MATRIX_CMD => x"000000",   -- no LED matrix on this board
-	MATRIX_CMD_WR => '0',
+	MATRIX_CMD => matrix_cmd,
+	MATRIX_CMD_WR => matrix_cmd_wr,
 	DEBUG_ADDR => x"0000",
 	DEBUG_DATA => x"0000",
 	RTC_DO => rtc_do,
@@ -2289,6 +2294,22 @@ port map(
 	D1 => '0',
 	R => '0',
 	S => '0'
+);
+
+-- dot matrix + audio peaks (registers E0 / E1 / E2 of the ZX-Uno ports FC3B / FD3B), as the Mini G top
+iowr <= '1' when o_zxn_cpu_iorq_n = '0' and o_zxn_cpu_wr_n = '0' and o_zxn_cpu_m1_n = '1' else '0';
+
+u_matrix: entity work.dot_matrix
+port map(
+    clk => CLK_28,
+    reset => areset,
+    audio_l => zxn_audio_L,
+    audio_r => zxn_audio_R,
+    iowr    => iowr,
+    ioa     => o_zxn_cpu_a,
+    iod     => o_zxn_cpu_do,
+    cmd_wr  => matrix_cmd_wr,
+    cmd     => matrix_cmd
 );
 
 end architecture;
