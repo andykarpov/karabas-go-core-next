@@ -542,7 +542,7 @@ architecture rtl of karabas_mini is
 	-- link v2 (kg_mcu2)
 	signal mcu_int						: std_logic;
 	signal reload_core				: std_logic_vector(7 downto 0);
-	signal sw_regs						: std_logic_vector(8*8-1 downto 0);
+	signal sw_regs						: std_logic_vector(9*8-1 downto 0);
 	signal mcu_kbd						: std_logic_vector(55 downto 0);
 	signal mcu_joy_l, mcu_joy_r	: std_logic_vector(15 downto 0);
 	signal mcu_btns					: std_logic_vector(5 downto 0);
@@ -2159,7 +2159,7 @@ MCU_IO(3 downto 2) <= (others => 'Z');
 U_MCU: entity work.kg_mcu2
 generic map(
 	CAPS => x"0000",
-	SW_N => 8,
+	SW_N => 9,
 	CS_FILTER => 3,
 	ENABLE_OSD => 1,
 	ENABLE_IMG => 0,
@@ -2246,7 +2246,8 @@ hid_kb_dat5 <= mcu_kbd(55 downto 48);
 joy_l <= mcu_joy_l(12 downto 0);
 joy_r <= mcu_joy_r(12 downto 0);
 kb_buttons <= mcu_btns(1 downto 0);
-hid_ms_z <= mcu_ms_z(3 downto 0);
+-- Invert mouse scroll (the OSD item "Invert scroll", switch index 8, core.json, default On): the wheel delta negated
+hid_ms_z <= (x"0" - mcu_ms_z(3 downto 0)) when sw_regs(64) = '1' else mcu_ms_z(3 downto 0);
 hid_ms_b <= mcu_ms_b(2 downto 0);
 hid_ms_upd <= ms_upd_t;
 
