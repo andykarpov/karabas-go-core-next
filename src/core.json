@@ -8,9 +8,9 @@
     "rtc_mode": 1,
     "roms": [],
     "boards": {
-        "go": {"link": 2, "type": "osd", "build": "26111813", "spi_freq": 8, "bitstream": "karabas_go.bin"},
-        "mini": {"link": 2, "type": "osd", "build": "26111813", "spi_freq": 8, "bitstream": "karabas_mini.bin"},
-        "minig": {"link": 2, "type": "osd", "build": "26111813", "bitstream": "karabas_minig.bin", "spi_freq": 8}
+        "go": {"link": 2, "type": "osd", "build": "26112713", "spi_freq": 8, "bitstream": "karabas_go.bin"},
+        "mini": {"link": 2, "type": "osd", "build": "26112713", "spi_freq": 8, "bitstream": "karabas_mini.bin"},
+        "minig": {"link": 2, "type": "osd", "build": "26112713", "bitstream": "karabas_minig.bin", "spi_freq": 8}
     },
     "osd": [
     {"type": "T", "bits": 1, "name": "Hard Reset", "options": null, "default": 0, "hotkey": "F1"},
@@ -20,6 +20,7 @@
     {"type": "T", "bits": 1, "name": "Scanlines", "options": null, "default": 0, "hotkey": "F7"},
     {"type": "T", "bits": 1, "name": "CPU Speed", "options": null, "default": 0, "hotkey": "F8"},
     {"type": "T", "bits": 1, "name": "Multiface", "options": null, "default": 0, "hotkey": "F9"},
-    {"type": "T", "bits": 1, "name": "DivMMC", "options": null, "default": 0, "hotkey": "F10"}
+    {"type": "T", "bits": 1, "name": "DivMMC", "options": null, "default": 0, "hotkey": "F10"},
+    {"type": "S", "bits": 1, "name": "Invert scroll", "options": ["Off", "On"], "default": 1}
     ]
 }
